@@ -15,38 +15,178 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 # ============================================================
-# TITOLI FTSE MIB
+# FTSE MIB
 # ============================================================
 
 FTSE_MIB = [
-    "A2A.MI", "AMP.MI", "ARISTON.MI", "AZM.MI",
-    "BAMI.MI", "BCA.MI", "BPE.MI", "BZZ.MI",
-    "CPR.MI", "DIA.MI", "ENEL.MI", "ENI.MI",
-    "ERG.MI", "RACE.MI", "FBK.MI", "G.MI",
-    "HER.MI", "INW.MI", "ISP.MI", "LDO.MI",
-    "MB.MI", "MONC.MI", "NEXI.MI", "PIR.MI",
-    "PNT.MI", "PRY.MI", "REC.MI", "RWAY.MI",
-    "SRG.MI", "STLAM.MI", "STMMI.MI", "TIT.MI",
-    "TEN.MI", "TRN.MI", "UCG.MI", "US.MI"
+    "A2A.MI",
+    "AMP.MI",
+    "ARISTON.MI",
+    "AZM.MI",
+    "BAMI.MI",
+    "BCA.MI",
+    "BPE.MI",
+    "BZZ.MI",
+    "CPR.MI",
+    "DIA.MI",
+    "ENEL.MI",
+    "ENI.MI",
+    "ERG.MI",
+    "RACE.MI",
+    "FBK.MI",
+    "G.MI",
+    "HER.MI",
+    "INW.MI",
+    "ISP.MI",
+    "LDO.MI",
+    "MB.MI",
+    "MONC.MI",
+    "NEXI.MI",
+    "PIR.MI",
+    "PNT.MI",
+    "PRY.MI",
+    "REC.MI",
+    "RWAY.MI",
+    "SRG.MI",
+    "STLAM.MI",
+    "STMMI.MI",
+    "TIT.MI",
+    "TEN.MI",
+    "TRN.MI",
+    "UCG.MI",
+    "US.MI"
 ]
 
 
 # ============================================================
-# TITOLI DOW JONES
+# DOW JONES
 # ============================================================
 
 DOW_JONES = [
-    "AAPL", "AMGN", "AMZN", "AXP", "BA",
-    "CAT", "CRM", "CSCO", "CVX", "DIS",
-    "DOW", "GS", "HD", "HON", "IBM",
-    "INTC", "JNJ", "JPM", "KO", "MCD",
-    "MMM", "MRK", "MSFT", "NKE", "PG",
-    "TRV", "UNH", "V", "VZ", "WMT"
+    "AAPL",
+    "AMGN",
+    "AMZN",
+    "AXP",
+    "BA",
+    "CAT",
+    "CRM",
+    "CSCO",
+    "CVX",
+    "DIS",
+    "DOW",
+    "GS",
+    "HD",
+    "HON",
+    "IBM",
+    "INTC",
+    "JNJ",
+    "JPM",
+    "KO",
+    "MCD",
+    "MMM",
+    "MRK",
+    "MSFT",
+    "NKE",
+    "PG",
+    "TRV",
+    "UNH",
+    "V",
+    "VZ",
+    "WMT"
 ]
 
 
 # ============================================================
-# FUNZIONE FINNHUB
+# NASDAQ-100
+# ============================================================
+
+NASDAQ_100 = [
+    "ADBE",
+    "AMD",
+    "ABNB",
+    "ALNY",
+    "AMAT",
+    "APP",
+    "ARM",
+    "ASML",
+    "AVGO",
+    "AXON",
+    "BKNG",
+    "CDNS",
+    "CEG",
+    "CHTR",
+    "CMCSA",
+    "COST",
+    "CRWD",
+    "CSCO",
+    "CTAS",
+    "CSX",
+    "DASH",
+    "DDOG",
+    "DXCM",
+    "EA",
+    "EXC",
+    "FANG",
+    "FAST",
+    "FTNT",
+    "GEHC",
+    "GILD",
+    "GOOG",
+    "GOOGL",
+    "HON",
+    "IDXX",
+    "INTC",
+    "INTU",
+    "ISRG",
+    "KDP",
+    "KHC",
+    "KLAC",
+    "LIN",
+    "LRCX",
+    "MAR",
+    "MCHP",
+    "MDLZ",
+    "MELI",
+    "META",
+    "MNST",
+    "MRVL",
+    "MSFT",
+    "MU",
+    "NFLX",
+    "NVDA",
+    "ODFL",
+    "ON",
+    "ORLY",
+    "PANW",
+    "PAYX",
+    "PCAR",
+    "PDD",
+    "PEP",
+    "PLTR",
+    "PYPL",
+    "QCOM",
+    "REGN",
+    "ROP",
+    "ROST",
+    "SBUX",
+    "SHOP",
+    "SNPS",
+    "TMUS",
+    "TSLA",
+    "TTD",
+    "TTWO",
+    "TXN",
+    "VRSK",
+    "VRTX",
+    "WBD",
+    "WDAY",
+    "WDC",
+    "XEL"
+]
+
+
+# ============================================================
+# FUNZIONE GENERICA FINNHUB
 # ============================================================
 
 def finnhub_get(endpoint, params=None):
@@ -73,7 +213,7 @@ def finnhub_get(endpoint, params=None):
         if response.status_code != 200:
 
             print(
-                f"Errore Finnhub HTTP {response.status_code}: "
+                f"Finnhub HTTP {response.status_code}: "
                 f"{response.text[:300]}"
             )
 
@@ -89,7 +229,7 @@ def finnhub_get(endpoint, params=None):
 
 
 # ============================================================
-# PROSSIME TRIMESTRALI
+# CALENDARIO TRIMESTRALI
 # ============================================================
 
 def get_upcoming_earnings(days_ahead=30):
@@ -101,7 +241,8 @@ def get_upcoming_earnings(days_ahead=30):
     )
 
     print(
-        f"Ricerca trimestrali dal {today} al {future}"
+        f"Ricerca trimestrali dal {today} "
+        f"al {future}"
     )
 
     data = finnhub_get(
@@ -114,9 +255,7 @@ def get_upcoming_earnings(days_ahead=30):
 
     if not data:
 
-        print(
-            "Nessun dato earnings ricevuto."
-        )
+        print("Nessun dato ricevuto da Finnhub.")
 
         return []
 
@@ -387,9 +526,9 @@ def analyze_stock(
 
             return None
 
-        # ----------------------------------------------------
-        # INFO
-        # ----------------------------------------------------
+        # ====================================================
+        # INFORMAZIONI TITOLO
+        # ====================================================
 
         try:
 
@@ -406,9 +545,9 @@ def analyze_stock(
 
             info = {}
 
-        # ----------------------------------------------------
+        # ====================================================
         # DATA TRIMESTRALE
-        # ----------------------------------------------------
+        # ====================================================
 
         try:
 
@@ -421,10 +560,6 @@ def analyze_stock(
 
         except Exception:
 
-            print(
-                f"{ticker}: data earnings non valida."
-            )
-
             return None
 
         today = datetime.date.today()
@@ -433,9 +568,9 @@ def analyze_stock(
             earnings_date - today
         ).days
 
-        # ----------------------------------------------------
+        # ====================================================
         # SMA20
-        # ----------------------------------------------------
+        # ====================================================
 
         df["SMA20"] = (
             df["Close"]
@@ -453,9 +588,9 @@ def analyze_stock(
 
         sma20 = latest["SMA20"]
 
-        # ----------------------------------------------------
+        # ====================================================
         # VOLUME
-        # ----------------------------------------------------
+        # ====================================================
 
         volume_average = (
             df["Volume"]
@@ -479,17 +614,17 @@ def analyze_stock(
                 > volume_average * 1.20
             )
 
-        # ----------------------------------------------------
-        # SCORE
-        # ----------------------------------------------------
+        # ====================================================
+        # SCORE INIZIALE
+        # ====================================================
 
         score = 3
 
         reasons = []
 
-        # ----------------------------------------------------
+        # ====================================================
         # TREND
-        # ----------------------------------------------------
+        # ====================================================
 
         if pd.notna(sma20):
 
@@ -520,9 +655,9 @@ def analyze_stock(
                     "senza volume anomalo"
                 )
 
-        # ----------------------------------------------------
+        # ====================================================
         # INSIDER
-        # ----------------------------------------------------
+        # ====================================================
 
         insider = check_insider_trading(
             ticker
@@ -542,9 +677,9 @@ def analyze_stock(
 
                 score -= 1
 
-        # ----------------------------------------------------
+        # ====================================================
         # SHORT
-        # ----------------------------------------------------
+        # ====================================================
 
         short_data = check_short_interest(
             info
@@ -556,9 +691,9 @@ def analyze_stock(
                 short_data["msg"]
             )
 
-        # ----------------------------------------------------
-        # EXECUTIVE
-        # ----------------------------------------------------
+        # ====================================================
+        # CAMBI VERTICI
+        # ====================================================
 
         executive_changes = (
             check_executive_changes(
@@ -579,9 +714,9 @@ def analyze_stock(
                     "alla trimestrale"
                 )
 
-        # ----------------------------------------------------
-        # LIMITA SCORE
-        # ----------------------------------------------------
+        # ====================================================
+        # LIMITAZIONE SCORE
+        # ====================================================
 
         score = max(
             1,
@@ -591,9 +726,9 @@ def analyze_stock(
             )
         )
 
-        # ----------------------------------------------------
+        # ====================================================
         # SEGNALE
-        # ----------------------------------------------------
+        # ====================================================
 
         if score >= 4:
 
@@ -658,7 +793,7 @@ def analyze_stock(
 def send_telegram(message):
 
     print(
-        "========================================"
+        "======================================"
     )
 
     print(
@@ -666,7 +801,7 @@ def send_telegram(message):
     )
 
     print(
-        "========================================"
+        "======================================"
     )
 
     if not TELEGRAM_BOT_TOKEN:
@@ -692,7 +827,9 @@ def send_telegram(message):
 
     success = True
 
-    for chat_id in TELEGRAM_CHAT_ID.split(","):
+    chat_ids = TELEGRAM_CHAT_ID.split(",")
+
+    for chat_id in chat_ids:
 
         chat_id = chat_id.strip()
 
@@ -709,6 +846,11 @@ def send_telegram(message):
                     "parse_mode": "Markdown"
                 },
                 timeout=15
+            )
+
+            print(
+                f"Telegram Chat ID: "
+                f"{chat_id}"
             )
 
             print(
@@ -752,7 +894,7 @@ def send_telegram(message):
 def main():
 
     print(
-        "========================================"
+        "======================================"
     )
 
     print(
@@ -764,7 +906,7 @@ def main():
     )
 
     print(
-        "========================================"
+        "======================================"
     )
 
     today = datetime.date.today()
@@ -774,9 +916,9 @@ def main():
         f"{today.strftime('%d/%m/%Y')}"
     )
 
-    # --------------------------------------------------------
-    # CONTROLLO FINNHUB
-    # --------------------------------------------------------
+    # ========================================================
+    # CONTROLLO CONFIGURAZIONE
+    # ========================================================
 
     if not FINNHUB_API_KEY:
 
@@ -784,20 +926,32 @@ def main():
             "ERRORE: FINNHUB_API_KEY mancante."
         )
 
-        error_message = (
+        send_telegram(
             "🔴 *SCANNER BORSA - ERRORE*\n\n"
             "FINNHUB_API_KEY non configurata."
         )
 
-        send_telegram(
-            error_message
+        return
+
+    if not TELEGRAM_BOT_TOKEN:
+
+        print(
+            "ERRORE: TELEGRAM_BOT_TOKEN mancante."
         )
 
         return
 
-    # --------------------------------------------------------
-    # RECUPERA EARNINGS
-    # --------------------------------------------------------
+    if not TELEGRAM_CHAT_ID:
+
+        print(
+            "ERRORE: TELEGRAM_CHAT_ID mancante."
+        )
+
+        return
+
+    # ========================================================
+    # RECUPERA TRIMESTRALI
+    # ========================================================
 
     upcoming_events = (
         get_upcoming_earnings(
@@ -805,9 +959,9 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
-    # NESSUN CALENDARIO
-    # --------------------------------------------------------
+    # ========================================================
+    # NESSUNA TRIMESTRALE
+    # ========================================================
 
     if not upcoming_events:
 
@@ -819,9 +973,7 @@ def main():
             "correttamente."
         )
 
-        print(
-            report
-        )
+        print(report)
 
         send_telegram(
             report
@@ -829,9 +981,9 @@ def main():
 
         return
 
-    # --------------------------------------------------------
-    # CREA DIZIONARIO
-    # --------------------------------------------------------
+    # ========================================================
+    # DIZIONARIO EARNINGS
+    # ========================================================
 
     upcoming_dict = {}
 
@@ -851,13 +1003,15 @@ def main():
                 symbol.upper()
             ] = date
 
-    # --------------------------------------------------------
-    # TROVA TARGET
-    # --------------------------------------------------------
+    # ========================================================
+    # TARGET
+    # ========================================================
 
     targets = []
 
+    # ========================================================
     # FTSE MIB
+    # ========================================================
 
     for ticker in FTSE_MIB:
 
@@ -870,10 +1024,7 @@ def main():
             .upper()
         )
 
-        if (
-            clean_symbol
-            in upcoming_dict
-        ):
+        if clean_symbol in upcoming_dict:
 
             targets.append(
                 (
@@ -885,14 +1036,13 @@ def main():
                 )
             )
 
+    # ========================================================
     # DOW JONES
+    # ========================================================
 
     for ticker in DOW_JONES:
 
-        if (
-            ticker.upper()
-            in upcoming_dict
-        ):
+        if ticker.upper() in upcoming_dict:
 
             targets.append(
                 (
@@ -904,14 +1054,43 @@ def main():
                 )
             )
 
+    # ========================================================
+    # NASDAQ-100
+    # ========================================================
+
+    for ticker in NASDAQ_100:
+
+        if ticker.upper() in upcoming_dict:
+
+            targets.append(
+                (
+                    ticker,
+                    upcoming_dict[
+                        ticker.upper()
+                    ],
+                    "🇺🇸 NASDAQ-100"
+                )
+            )
+
+    # ========================================================
+    # RIEPILOGO TARGET
+    # ========================================================
+
     print(
-        f"Titoli da analizzare: "
-        f"{len(targets)}"
+        "======================================"
     )
 
-    # --------------------------------------------------------
+    print(
+        f"Titoli da analizzare: {len(targets)}"
+    )
+
+    print(
+        "======================================"
+    )
+
+    # ========================================================
     # ANALISI
-    # --------------------------------------------------------
+    # ========================================================
 
     signals = []
 
@@ -939,9 +1118,9 @@ def main():
                 result
             )
 
-    # --------------------------------------------------------
+    # ========================================================
     # NESSUN SEGNALE
-    # --------------------------------------------------------
+    # ========================================================
 
     if not signals:
 
@@ -949,15 +1128,17 @@ def main():
             "🟢 *SCANSIONE BORSA COMPLETATA*\n\n"
             f"📅 {today.strftime('%d/%m/%Y')}\n\n"
             "📊 *Per oggi non abbiamo titoli da proporti.*\n\n"
-            "🔎 Sono stati analizzati i titoli "
-            "con trimestrale nei prossimi 30 giorni.\n\n"
+            f"🔎 Titoli con trimestrale nei prossimi "
+            f"30 giorni: *{len(targets)}*\n\n"
             "Nessun titolo ha raggiunto il livello "
-            "di segnale richiesto."
+            "di segnale richiesto.\n\n"
+            "Mercati analizzati:\n"
+            "🇮🇹 FTSE MIB\n"
+            "🇺🇸 Dow Jones\n"
+            "🇺🇸 NASDAQ-100"
         )
 
-        print(
-            report
-        )
+        print(report)
 
         send_telegram(
             report
@@ -965,18 +1146,18 @@ def main():
 
         return
 
-    # --------------------------------------------------------
+    # ========================================================
     # ORDINA SEGNALI
-    # --------------------------------------------------------
+    # ========================================================
 
     signals.sort(
         key=lambda x: x["score"],
         reverse=True
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # CREA REPORT
-    # --------------------------------------------------------
+    # ========================================================
 
     report = (
         "🚨 *AUTOMATIC TRADING SIGNALS*\n"
@@ -988,6 +1169,10 @@ def main():
         f"📊 Segnali trovati: "
         f"*{len(signals)}*\n\n"
     )
+
+    # ========================================================
+    # REPORT SEGNALI
+    # ========================================================
 
     for signal in signals:
 
@@ -1006,7 +1191,10 @@ def main():
             f"Rating: {stars} "
             f"({signal['score']}/5)\n"
             f"*{signal['bias']}*\n\n"
-            f"*Motivi del segnale:*\n"
+        )
+
+        report += (
+            "*Motivi del segnale:*\n"
         )
 
         for reason in signal["reasons"]:
@@ -1019,9 +1207,19 @@ def main():
             f"\n{signal['advice']}\n\n"
         )
 
-    # --------------------------------------------------------
-    # INVIO
-    # --------------------------------------------------------
+    # ========================================================
+    # AVVISO
+    # ========================================================
+
+    report += (
+        "⚠️ *Nota:* questi segnali sono "
+        "generati automaticamente e non "
+        "costituiscono consulenza finanziaria."
+    )
+
+    # ========================================================
+    # INVIO TELEGRAM
+    # ========================================================
 
     send_telegram(
         report
@@ -1029,7 +1227,7 @@ def main():
 
 
 # ============================================================
-# AVVIO PROGRAMMA
+# AVVIO
 # ============================================================
 
 if __name__ == "__main__":
@@ -1044,12 +1242,13 @@ if __name__ == "__main__":
             f"ERRORE GENERALE: {error}"
         )
 
-        error_message = (
-            "🔴 *SCANNER BORSA - ERRORE*\n\n"
-            f"Si è verificato un errore:\n"
-            f"`{str(error)[:500]}`"
-        )
+        try:
 
-        send_telegram(
-            error_message
-        )
+            send_telegram(
+                "🔴 *SCANNER BORSA - ERRORE*\n\n"
+                f"Errore:\n`{str(error)[:500]}`"
+            )
+
+        except Exception:
+
+            pass
