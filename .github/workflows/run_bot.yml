@@ -10,22 +10,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+
+      - name: Scarica il codice
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Configura Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Installa dipendenze
+      - name: Installa pacchetti
         run: |
           python -m pip install --upgrade pip
           python -m pip install requests pandas yfinance
 
-      - name: Esegui bot
+      - name: Controlla file
+        run: |
+          echo "======================================"
+          echo "FILE PRESENTI"
+          echo "======================================"
+          ls -la
+          echo ""
+          echo "Controllo pandas_ta:"
+          if grep -R "pandas_ta" . --exclude-dir=.git; then
+            echo "ERRORE: pandas_ta ancora presente!"
+            exit 1
+          else
+            echo "OK: pandas_ta NON presente"
+          fi
+
+      - name: Esegui scanner
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py
+        run: |
+          python main.py
