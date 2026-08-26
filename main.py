@@ -1,6 +1,7 @@
 import os
-import requests
 import datetime
+
+import requests
 import pandas as pd
 import yfinance as yf
 
@@ -9,102 +10,41 @@ import yfinance as yf
 # CONFIGURAZIONE
 # ============================================================
 
-FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 # ============================================================
-# COMPONENTI FTSE MIB
+# TITOLI
 # ============================================================
 
 FTSE_MIB = [
-    "A2A.MI",
-    "AMP.MI",
-    "ARISTON.MI",
-    "AZM.MI",
-    "BAMI.MI",
-    "BCA.MI",
-    "BPE.MI",
-    "BZZ.MI",
-    "CPR.MI",
-    "DIA.MI",
-    "ENEL.MI",
-    "ENI.MI",
-    "ERG.MI",
-    "RACE.MI",
-    "FBK.MI",
-    "G.MI",
-    "HER.MI",
-    "INW.MI",
-    "ISP.MI",
-    "LDO.MI",
-    "MB.MI",
-    "MONC.MI",
-    "NEXI.MI",
-    "PIR.MI",
-    "PNT.MI",
-    "PRY.MI",
-    "REC.MI",
-    "RWAY.MI",
-    "SRG.MI",
-    "STLAM.MI",
-    "STMMI.MI",
-    "TIT.MI",
-    "TEN.MI",
-    "TRN.MI",
-    "UCG.MI",
-    "US.MI",
+    "A2A.MI", "AMP.MI", "ARISTON.MI", "AZM.MI",
+    "BAMI.MI", "BCA.MI", "BPE.MI", "BZZ.MI",
+    "CPR.MI", "DIA.MI", "ENEL.MI", "ENI.MI",
+    "ERG.MI", "RACE.MI", "FBK.MI", "G.MI",
+    "HER.MI", "INW.MI", "ISP.MI", "LDO.MI",
+    "MB.MI", "MONC.MI", "NEXI.MI", "PIR.MI",
+    "PNT.MI", "PRY.MI", "REC.MI", "RWAY.MI",
+    "SRG.MI", "STLAM.MI", "STMMI.MI", "TIT.MI",
+    "TEN.MI", "TRN.MI", "UCG.MI", "US.MI"
 ]
-
-
-# ============================================================
-# COMPONENTI DOW JONES
-# ============================================================
 
 DOW_JONES = [
-    "AAPL",
-    "AMGN",
-    "AMZN",
-    "AXP",
-    "BA",
-    "CAT",
-    "CRM",
-    "CSCO",
-    "CVX",
-    "DIS",
-    "DOW",
-    "GS",
-    "HD",
-    "HON",
-    "IBM",
-    "INTC",
-    "JNJ",
-    "JPM",
-    "KO",
-    "MCD",
-    "MMM",
-    "MRK",
-    "MSFT",
-    "NKE",
-    "PG",
-    "TRV",
-    "UNH",
-    "V",
-    "VZ",
-    "WMT",
+    "AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT",
+    "CRM", "CSCO", "CVX", "DIS", "DOW", "GS",
+    "HD", "HON", "IBM", "INTC", "JNJ", "JPM",
+    "KO", "MCD", "MMM", "MRK", "MSFT", "NKE",
+    "PG", "TRV", "UNH", "V", "VZ", "WMT"
 ]
 
 
 # ============================================================
-# FUNZIONE HTTP GENERICA FINNHUB
+# FINNHUB
 # ============================================================
 
 def finnhub_get(endpoint, params=None):
-    """
-    Effettua una richiesta alle API Finnhub.
-    Restituisce un dizionario/lista oppure None in caso di errore.
-    """
 
     if not FINNHUB_API_KEY:
         print("ERRORE: FINNHUB_API_KEY non configurata.")
@@ -126,34 +66,23 @@ def finnhub_get(endpoint, params=None):
 
         if response.status_code != 200:
             print(
-                f"Finnhub HTTP {response.status_code} "
-                f"per endpoint {endpoint}"
+                f"Finnhub HTTP {response.status_code}: "
+                f"{response.text[:300]}"
             )
             return None
 
         return response.json()
 
-    except requests.exceptions.Timeout:
-        print(f"Timeout Finnhub: {endpoint}")
-        return None
-
-    except requests.exceptions.RequestException as e:
-        print(f"Errore connessione Finnhub: {e}")
-        return None
-
-    except ValueError:
-        print(f"Risposta JSON non valida da Finnhub: {endpoint}")
+    except Exception as error:
+        print(f"Errore Finnhub: {error}")
         return None
 
 
 # ============================================================
-# CALENDARIO TRIMESTRALI
+# EARNINGS
 # ============================================================
 
 def get_upcoming_earnings(days_ahead=30):
-    """
-    Recupera le date delle prossime trimestrali da Finnhub.
-    """
 
     today = datetime.date.today()
     future = today + datetime.timedelta(days=days_ahead)
@@ -162,39 +91,28 @@ def get_upcoming_earnings(days_ahead=30):
         "calendar/earnings",
         {
             "from": today.isoformat(),
-            "to": future.isoformat(),
+            "to": future.isoformat()
         }
     )
 
     if not data:
-        print("Nessun dato ricevuto dal calendario Finnhub.")
         return []
 
-    earnings = data.get("earningsCalendar", [])
-
-    print(
-        f"Calendario trimestrali: "
-        f"{len(earnings)} eventi trovati."
-    )
-
-    return earnings
+    return data.get("earningsCalendar", [])
 
 
 # ============================================================
 # INSIDER TRADING
 # ============================================================
 
-def check_insider_trading(ticker_symbol):
-    """
-    Analizza le ultime transazioni insider disponibili.
-    """
+def check_insider_trading(ticker):
 
-    clean_ticker = ticker_symbol.replace(".MI", "")
+    symbol = ticker.replace(".MI", "")
 
     data = finnhub_get(
         "stock/insider-transactions",
         {
-            "symbol": clean_ticker
+            "symbol": symbol
         }
     )
 
@@ -206,47 +124,37 @@ def check_insider_trading(ticker_symbol):
 
     transactions = data.get("data", [])
 
-    if not transactions:
-        return {
-            "status": "NEUTRAL",
-            "msg": None
-        }
-
+    buys = 0
+    sells = 0
     net_shares = 0
-    recent_buys = 0
-    recent_sells = 0
 
     for item in transactions[:20]:
 
         try:
-            change = float(item.get("change", 0) or 0)
-        except (ValueError, TypeError):
+            change = float(
+                item.get("change", 0) or 0
+            )
+        except Exception:
             change = 0
 
         if change > 0:
+            buys += 1
             net_shares += change
-            recent_buys += 1
 
         elif change < 0:
+            sells += 1
             net_shares += change
-            recent_sells += 1
 
-    if recent_buys > recent_sells and net_shares > 0:
+    if buys > sells and net_shares > 0:
         return {
             "status": "BUY",
-            "msg": (
-                "🟢 Insider Buying: "
-                "i dirigenti stanno acquistando azioni proprie"
-            )
+            "msg": "🟢 Insider Buying: acquisti insider superiori alle vendite"
         }
 
-    if recent_sells > recent_buys and net_shares < 0:
+    if sells > buys and net_shares < 0:
         return {
             "status": "SELL",
-            "msg": (
-                "🔴 Insider Selling: "
-                "i dirigenti stanno alleggerendo le posizioni"
-            )
+            "msg": "🔴 Insider Selling: vendite insider superiori agli acquisti"
         }
 
     return {
@@ -259,39 +167,39 @@ def check_insider_trading(ticker_symbol):
 # SHORT INTEREST
 # ============================================================
 
-def check_short_interest(stock_info):
-    """
-    Analizza lo short interest disponibile nei dati Yahoo Finance.
-    """
+def check_short_interest(info):
 
-    if not isinstance(stock_info, dict):
+    if not isinstance(info, dict):
         return {
             "high_short": False,
             "msg": None
         }
 
     try:
-        short_percent = stock_info.get(
-            "shortPercentOfFloat",
-            0
+
+        short_percent = info.get(
+            "shortPercentOfFloat"
         )
 
         if short_percent is None:
-            short_percent = 0
+            return {
+                "high_short": False,
+                "msg": None
+            }
 
         short_percent = float(short_percent)
 
         if short_percent > 0.05:
+
             return {
                 "high_short": True,
                 "msg": (
                     f"⚡ Alto Short Interest "
-                    f"({short_percent * 100:.1f}%): "
-                    f"possibile pressione rialzista in caso di catalizzatore positivo"
+                    f"({short_percent * 100:.1f}%)"
                 )
             }
 
-    except (ValueError, TypeError):
+    except Exception:
         pass
 
     return {
@@ -301,52 +209,42 @@ def check_short_interest(stock_info):
 
 
 # ============================================================
-# CAMBIAMENTI EXECUTIVE
+# CAMBI EXECUTIVE
 # ============================================================
 
-def check_executive_changes(ticker_symbol):
-    """
-    Cerca cambiamenti recenti nei principali dirigenti.
-    """
+def check_executive_changes(ticker):
 
-    clean_ticker = ticker_symbol.replace(".MI", "")
+    symbol = ticker.replace(".MI", "")
 
     data = finnhub_get(
         "stock/executive",
         {
-            "symbol": clean_ticker
+            "symbol": symbol
         }
     )
 
     if not data:
         return []
 
-    executives = data.get("executive", [])
+    executives = data.get(
+        "executive",
+        []
+    )
 
-    if not executives:
-        return []
+    results = []
 
-    insights = []
-
-    current_year = str(datetime.date.today().year)
+    current_year = str(
+        datetime.date.today().year
+    )
 
     for executive in executives[:10]:
 
-        position = str(
+        title = str(
             executive.get("title", "")
         ).upper()
 
-        name = executive.get(
-            "name",
-            "Nome non disponibile"
-        )
-
-        since = str(
-            executive.get("since", "")
-        )
-
-        important_role = any(
-            role in position
+        if not any(
+            role in title
             for role in [
                 "CEO",
                 "CFO",
@@ -354,103 +252,81 @@ def check_executive_changes(ticker_symbol):
                 "CHIEF FINANCIAL",
                 "PRESIDENT"
             ]
+        ):
+            continue
+
+        since = str(
+            executive.get("since", "")
         )
 
-        if important_role and current_year in since:
+        if current_year in since:
 
-            insights.append(
-                f"⚠️ Cambio vertici recente: "
+            name = executive.get(
+                "name",
+                "N/D"
+            )
+
+            results.append(
+                f"⚠️ Cambio vertici: "
                 f"{name} ({executive.get('title', '')})"
             )
 
-    return insights
+    return results
 
 
 # ============================================================
-# ANALISI TITOLO
+# ANALISI
 # ============================================================
 
-def analyze_earnings_catalyst(
-    ticker_symbol,
+def analyze_stock(
+    ticker,
     release_date,
-    market_name
+    market
 ):
-    """
-    Analizza il titolo in prossimità della trimestrale.
 
-    Indicatori utilizzati:
-    - SMA20
-    - volume relativo
-    - insider trading
-    - short interest
-    - cambiamenti executive
-    """
-
-    print(
-        f"\nAnalisi {ticker_symbol} "
-        f"- trimestrale {release_date}"
-    )
+    print(f"Analisi {ticker}...")
 
     try:
 
-        # ----------------------------------------------------
-        # DOWNLOAD DATI YAHOO FINANCE
-        # ----------------------------------------------------
-
-        stock = yf.Ticker(ticker_symbol)
+        stock = yf.Ticker(ticker)
 
         df = stock.history(
             period="6mo",
             auto_adjust=False
         )
 
-        if df.empty:
-            print(
-                f"{ticker_symbol}: nessun dato storico."
-            )
+        if df.empty or len(df) < 20:
+            print(f"{ticker}: dati insufficienti.")
             return None
-
-        if len(df) < 20:
-            print(
-                f"{ticker_symbol}: dati insufficienti."
-            )
-            return None
-
-        # ----------------------------------------------------
-        # INFO TITOLO
-        # ----------------------------------------------------
 
         try:
             info = stock.info
-        except Exception as e:
-            print(
-                f"{ticker_symbol}: impossibile recuperare info: {e}"
-            )
-            info = {}
-
-        if not isinstance(info, dict):
+        except Exception:
             info = {}
 
         # ----------------------------------------------------
-        # DATA TRIMESTRALE
+        # DATA EARNINGS
         # ----------------------------------------------------
 
         try:
-            earnings_dt = datetime.datetime.strptime(
+
+            earnings_date = datetime.datetime.strptime(
                 str(release_date),
                 "%Y-%m-%d"
             ).date()
-        except ValueError:
+
+        except Exception:
+
             print(
-                f"{ticker_symbol}: data trimestrale non valida: "
-                f"{release_date}"
+                f"{ticker}: data earnings non valida."
             )
+
             return None
 
         today = datetime.date.today()
 
         days_left = (
-            earnings_dt - today
+            earnings_date - today
         ).days
 
         # ----------------------------------------------------
@@ -459,230 +335,177 @@ def analyze_earnings_catalyst(
 
         df["SMA20"] = (
             df["Close"]
-            .rolling(window=20)
+            .rolling(20)
             .mean()
         )
 
         latest = df.iloc[-1]
 
-        close_price = latest.get("Close", 0)
-        sma20 = latest.get("SMA20", 0)
-        latest_volume = latest.get("Volume", 0)
+        close = float(
+            latest["Close"]
+        )
+
+        sma20 = latest["SMA20"]
 
         # ----------------------------------------------------
-        # VOLUME MEDIO
+        # VOLUME
         # ----------------------------------------------------
 
-        volume_mean = (
+        volume_average = (
             df["Volume"]
             .tail(20)
             .mean()
         )
 
-        high_volume = False
+        current_volume = latest["Volume"]
 
-        if (
-            pd.notna(volume_mean)
-            and volume_mean > 0
-            and pd.notna(latest_volume)
-        ):
-            high_volume = (
-                latest_volume > volume_mean * 1.20
-            )
-
-        # ----------------------------------------------------
-        # INSIDER
-        # ----------------------------------------------------
-
-        insider_data = check_insider_trading(
-            ticker_symbol
+        high_volume = (
+            pd.notna(volume_average)
+            and volume_average > 0
+            and current_volume > volume_average * 1.20
         )
 
         # ----------------------------------------------------
-        # SHORT INTEREST
+        # SCORE
         # ----------------------------------------------------
-
-        short_data = check_short_interest(
-            info
-        )
-
-        # ----------------------------------------------------
-        # EXECUTIVE
-        # ----------------------------------------------------
-
-        exec_news = check_executive_changes(
-            ticker_symbol
-        )
-
-        # ====================================================
-        # CALCOLO SCORE
-        # ====================================================
 
         score = 3
 
         reasons = []
 
-        # ----------------------------------------------------
-        # TREND + VOLUME
-        # ----------------------------------------------------
+        # TREND
 
-        if (
-            pd.notna(sma20)
-            and pd.notna(close_price)
-        ):
+        if pd.notna(sma20):
 
-            if close_price > sma20 and high_volume:
+            if close > sma20 and high_volume:
 
                 score += 1
 
                 reasons.append(
-                    "🟢 Accumulo pre-bilancio: "
-                    "prezzo sopra SMA20 con volume superiore "
-                    "alla media"
+                    "🟢 Prezzo sopra SMA20 "
+                    "con volume superiore alla media"
                 )
 
-            elif close_price < sma20:
+            elif close < sma20:
 
                 score -= 1
 
                 reasons.append(
-                    "🔴 Trend debole: "
-                    "prezzo sotto la SMA20"
+                    "🔴 Prezzo sotto SMA20"
                 )
 
-            elif close_price > sma20:
+            else:
 
                 reasons.append(
-                    "🟢 Trend positivo: "
-                    "prezzo sopra la SMA20"
+                    "🟡 Prezzo sopra SMA20 "
+                    "senza volume anomalo"
                 )
 
-        # ----------------------------------------------------
         # INSIDER
-        # ----------------------------------------------------
 
-        if insider_data["msg"]:
+        insider = check_insider_trading(
+            ticker
+        )
+
+        if insider["msg"]:
 
             reasons.append(
-                insider_data["msg"]
+                insider["msg"]
             )
 
-            if insider_data["status"] == "BUY":
+            if insider["status"] == "BUY":
                 score += 1
 
-            elif insider_data["status"] == "SELL":
+            elif insider["status"] == "SELL":
                 score -= 1
 
-        # ----------------------------------------------------
-        # SHORT INTEREST
-        # ----------------------------------------------------
+        # SHORT
+
+        short_data = check_short_interest(
+            info
+        )
 
         if short_data["msg"]:
-
             reasons.append(
                 short_data["msg"]
             )
 
-        # ----------------------------------------------------
-        # CAMBI EXECUTIVE
-        # ----------------------------------------------------
+        # EXECUTIVE
 
-        if exec_news:
+        executive_changes = (
+            check_executive_changes(ticker)
+        )
+
+        if executive_changes:
 
             reasons.extend(
-                exec_news
+                executive_changes
             )
 
             if days_left <= 15:
 
                 reasons.append(
                     "⚠️ Cambio vertici vicino "
-                    "alla trimestrale: possibile aumento "
-                    "della volatilità"
+                    "alla trimestrale"
                 )
 
-        # ----------------------------------------------------
-        # LIMITAZIONE SCORE
-        # ----------------------------------------------------
+        # LIMIT SCORE
 
         score = max(
             1,
             min(5, score)
         )
 
-        # ====================================================
-        # BIAS OPERATIVO
-        # ====================================================
+        # ----------------------------------------------------
+        # BIAS
+        # ----------------------------------------------------
 
         if score >= 4:
 
-            bias = (
-                "🚀 SEGNALE RIALZISTA "
-                "(Forte Potenziale)"
-            )
+            bias = "🚀 SEGNALE RIALZISTA"
 
-            action_advice = (
-                "💡 *Segnale:* "
-                "Titolo in accumulo / possibile "
-                "spinta positiva verso la trimestrale."
+            advice = (
+                "💡 *Segnale:* struttura favorevole "
+                "in prossimità della trimestrale."
             )
 
         elif score <= 2:
 
-            bias = (
-                "🔻 SEGNALE RIBASSISTA "
-                "(Alto Rischio)"
-            )
+            bias = "🔻 SEGNALE RIBASSISTA"
 
-            action_advice = (
-                "💡 *Segnale:* "
-                "Debolezza / possibile rischio "
-                "di sell-off pre o post bilancio."
+            advice = (
+                "💡 *Segnale:* struttura debole "
+                "in prossimità della trimestrale."
             )
 
         else:
 
             bias = "⚖️ NEUTRO"
 
-            action_advice = (
-                "💡 *Segnale:* "
-                "Nessun vantaggio operativo chiaro "
-                "al momento."
+            advice = (
+                "💡 *Segnale:* nessun vantaggio "
+                "operativo evidente."
             )
 
-        # ====================================================
-        # NOME TITOLO
-        # ====================================================
-
-        name = info.get(
-            "shortName",
-            ticker_symbol
-        )
-
-        if not name:
-            name = ticker_symbol
-
-        # ====================================================
-        # RISULTATO
-        # ====================================================
-
         return {
-            "symbol": ticker_symbol,
-            "name": name,
-            "market": market_name,
+            "symbol": ticker,
+            "name": info.get(
+                "shortName",
+                ticker
+            ),
+            "market": market,
             "days_left": days_left,
             "release_date": release_date,
             "score": score,
             "bias": bias,
             "reasons": reasons,
-            "advice": action_advice
+            "advice": advice
         }
 
-    except Exception as e:
+    except Exception as error:
 
         print(
-            f"Errore durante l'analisi di "
-            f"{ticker_symbol}: {e}"
+            f"Errore {ticker}: {error}"
         )
 
         return None
@@ -692,21 +515,14 @@ def analyze_earnings_catalyst(
 # TELEGRAM
 # ============================================================
 
-def send_telegram_message(message):
-    """
-    Invia il report a uno o più chat ID Telegram.
-    """
+def send_telegram(message):
 
     if not TELEGRAM_BOT_TOKEN:
-        print(
-            "ERRORE: TELEGRAM_BOT_TOKEN non configurato."
-        )
+        print("TELEGRAM_BOT_TOKEN mancante.")
         return False
 
     if not TELEGRAM_CHAT_ID:
-        print(
-            "ERRORE: TELEGRAM_CHAT_ID non configurato."
-        )
+        print("TELEGRAM_CHAT_ID mancante.")
         return False
 
     url = (
@@ -714,11 +530,9 @@ def send_telegram_message(message):
         f"bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     )
 
-    chat_ids = TELEGRAM_CHAT_ID.split(",")
-
     success = True
 
-    for chat_id in chat_ids:
+    for chat_id in TELEGRAM_CHAT_ID.split(","):
 
         chat_id = chat_id.strip()
 
@@ -740,8 +554,7 @@ def send_telegram_message(message):
             if response.status_code == 200:
 
                 print(
-                    f"Telegram: messaggio inviato "
-                    f"a {chat_id}"
+                    f"Telegram inviato a {chat_id}"
                 )
 
             else:
@@ -749,17 +562,17 @@ def send_telegram_message(message):
                 success = False
 
                 print(
-                    f"Telegram errore "
+                    f"Errore Telegram "
                     f"{response.status_code}: "
-                    f"{response.text}"
+                    f"{response.text[:300]}"
                 )
 
-        except requests.exceptions.RequestException as e:
+        except Exception as error:
 
             success = False
 
             print(
-                f"Errore invio Telegram: {e}"
+                f"Errore Telegram: {error}"
             )
 
     return success
@@ -773,265 +586,188 @@ def main():
 
     print("=" * 60)
     print("AUTOMATIC TRADING SIGNALS")
-    print("Earnings & Catalysts Scanner")
+    print("EARNINGS & CATALYST SCANNER")
     print("=" * 60)
 
-    try:
-
-        # ====================================================
-        # CONTROLLO API
-        # ====================================================
-
-        if not FINNHUB_API_KEY:
-
-            print(
-                "ERRORE: FINNHUB_API_KEY non configurata."
-            )
-
-            return
-
-        # ====================================================
-        # RECUPERA TRIMESTRALI
-        # ====================================================
-
-        upcoming_events = get_upcoming_earnings(
-            days_ahead=30
-        )
-
-        if not upcoming_events:
-
-            print(
-                "Nessuna trimestrale trovata "
-                "nel periodo analizzato."
-            )
-
-            return
-
-        # ====================================================
-        # CREA DIZIONARIO TRIMESTRALI
-        # ====================================================
-
-        upcoming_dict = {}
-
-        for item in upcoming_events:
-
-            symbol = item.get("symbol")
-            release_date = item.get("date")
-
-            if symbol and release_date:
-
-                upcoming_dict[
-                    symbol.upper()
-                ] = release_date
+    if not FINNHUB_API_KEY:
 
         print(
-            f"Eventi validi: "
-            f"{len(upcoming_dict)}"
+            "ERRORE: FINNHUB_API_KEY non configurata."
         )
 
-        # ====================================================
-        # IDENTIFICA TITOLI FTSE MIB
-        # ====================================================
+        return
 
-        targets = []
+    earnings = get_upcoming_earnings(
+        days_ahead=30
+    )
 
-        for ticker in FTSE_MIB:
-
-            clean_symbol = (
-                ticker
-                .replace(".MI", "")
-                .upper()
-            )
-
-            if clean_symbol in upcoming_dict:
-
-                targets.append(
-                    (
-                        ticker,
-                        upcoming_dict[clean_symbol],
-                        "🇮🇹 FTSE MIB"
-                    )
-                )
-
-        # ====================================================
-        # IDENTIFICA TITOLI DOW JONES
-        # ====================================================
-
-        for ticker in DOW_JONES:
-
-            if ticker.upper() in upcoming_dict:
-
-                targets.append(
-                    (
-                        ticker,
-                        upcoming_dict[ticker.upper()],
-                        "🇺🇸 DOW JONES"
-                    )
-                )
+    if not earnings:
 
         print(
-            f"Titoli da analizzare: "
-            f"{len(targets)}"
+            "Nessun dato earnings disponibile."
         )
 
-        # ====================================================
-        # ANALISI
-        # ====================================================
+        return
 
-        signals = []
+    earnings_dict = {}
 
-        for ticker, release_date, market in targets:
+    for event in earnings:
 
-            try:
+        symbol = event.get("symbol")
+        date = event.get("date")
 
-                analysis = analyze_earnings_catalyst(
+        if symbol and date:
+
+            earnings_dict[
+                symbol.upper()
+            ] = date
+
+    targets = []
+
+    # --------------------------------------------------------
+    # FTSE MIB
+    # --------------------------------------------------------
+
+    for ticker in FTSE_MIB:
+
+        clean_symbol = (
+            ticker
+            .replace(".MI", "")
+            .upper()
+        )
+
+        if clean_symbol in earnings_dict:
+
+            targets.append(
+                (
                     ticker,
-                    release_date,
-                    market
+                    earnings_dict[clean_symbol],
+                    "🇮🇹 FTSE MIB"
                 )
-
-                if analysis:
-
-                    score = analysis["score"]
-
-                    if score >= 4 or score <= 2:
-
-                        signals.append(
-                            analysis
-                        )
-
-            except Exception as e:
-
-                print(
-                    f"Salto {ticker} "
-                    f"per errore: {e}"
-                )
-
-                continue
-
-        # ====================================================
-        # NESSUN SEGNALE
-        # ====================================================
-
-        if not signals:
-
-            print(
-                "Nessun segnale ad alta priorità "
-                "rilevato nella scansione odierna."
             )
 
-            return
+    # --------------------------------------------------------
+    # DOW JONES
+    # --------------------------------------------------------
 
-        # ====================================================
-        # ORDINA I SEGNALI
-        # ====================================================
+    for ticker in DOW_JONES:
 
-        signals.sort(
-            key=lambda x: x["score"],
-            reverse=True
+        if ticker.upper() in earnings_dict:
+
+            targets.append(
+                (
+                    ticker,
+                    earnings_dict[ticker.upper()],
+                    "🇺🇸 DOW JONES"
+                )
+            )
+
+    print(
+        f"Titoli trovati: {len(targets)}"
+    )
+
+    signals = []
+
+    for ticker, date, market in targets:
+
+        result = analyze_stock(
+            ticker,
+            date,
+            market
         )
 
-        # ====================================================
-        # CREA REPORT
-        # ====================================================
+        if result:
 
-        report = (
-            "🚨 *AUTOMATIC TRADING SIGNALS*\n"
-            "*BILANCI & CATALIZZATORI*\n\n"
+            if (
+                result["score"] >= 4
+                or result["score"] <= 2
+            ):
+
+                signals.append(result)
+
+    # --------------------------------------------------------
+    # NESSUN SEGNALE
+    # --------------------------------------------------------
+
+    if not signals:
+
+        print(
+            "Nessun segnale ad alta priorità."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # ORDINA
+    # --------------------------------------------------------
+
+    signals.sort(
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    # --------------------------------------------------------
+    # REPORT
+    # --------------------------------------------------------
+
+    report = (
+        "🚨 *AUTOMATIC TRADING SIGNALS*\n"
+        "*BILANCI & CATALIZZATORI*\n\n"
+    )
+
+    report += (
+        f"📊 Segnali trovati: "
+        f"*{len(signals)}*\n\n"
+    )
+
+    for signal in signals:
+
+        stars = (
+            "⭐" * signal["score"]
         )
 
         report += (
-            f"📊 Segnali rilevati: "
-            f"*{len(signals)}*\n\n"
+            f"{signal['market']}\n"
+            f"📅 Trimestrale: "
+            f"*{signal['release_date']}* "
+            f"(tra {signal['days_left']} gg)\n"
+            f"🏢 *{signal['name']}* "
+            f"(`{signal['symbol']}`)\n"
+            f"Rating: {stars} "
+            f"({signal['score']}/5)\n"
+            f"*{signal['bias']}*\n"
+            f"Motivi:\n"
         )
 
-        for sig in signals:
-
-            stars = (
-                "⭐" * sig["score"]
-            )
+        for reason in signal["reasons"]:
 
             report += (
-                f"{sig['market']} | "
-                f"*In uscita tra "
-                f"{sig['days_left']} gg* "
-                f"({sig['release_date']})\n"
+                f"• {reason}\n"
             )
 
-            report += (
-                f"🏢 *{sig['name']}* "
-                f"(`{sig['symbol']}`)\n"
-            )
+        report += (
+            f"{signal['advice']}\n\n"
+        )
 
-            report += (
-                f"Rating: {stars} "
-                f"({sig['score']}/5)\n"
-            )
+    # --------------------------------------------------------
+    # TELEGRAM
+    # --------------------------------------------------------
 
-            report += (
-                f"*{sig['bias']}*\n"
-            )
+    if (
+        TELEGRAM_BOT_TOKEN
+        and TELEGRAM_CHAT_ID
+    ):
 
-            if sig["reasons"]:
+        send_telegram(report)
 
-                report += (
-                    "Motivi del segnale:\n"
-                )
-
-                for reason in sig["reasons"]:
-
-                    report += (
-                        f"  • {reason}\n"
-                    )
-
-            report += (
-                f"{sig['advice']}\n\n"
-            )
-
-        # ====================================================
-        # INVIO TELEGRAM
-        # ====================================================
-
-        if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-
-            sent = send_telegram_message(
-                report
-            )
-
-            if sent:
-
-                print(
-                    "Segnale inviato "
-                    "correttamente su Telegram."
-                )
-
-            else:
-
-                print(
-                    "Errore durante l'invio "
-                    "del report Telegram."
-                )
-
-        else:
-
-            print(
-                "Credenziali Telegram non rilevate."
-            )
-
-            print("\nREPORT:")
-            print(report)
-
-    except Exception as general_error:
+    else:
 
         print(
-            f"ERRORE GENERALE: "
-            f"{general_error}"
+            "Telegram non configurato."
         )
 
+        print(report)
 
-# ============================================================
-# AVVIO
-# ============================================================
 
 if __name__ == "__main__":
     main()
