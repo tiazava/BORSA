@@ -8,22 +8,124 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+
     steps:
+
+      # ============================================================
+      # 1. SCARICA IL REPOSITORY
+      # ============================================================
       - name: Scarica il codice dal Repository
         uses: actions/checkout@v4
 
+      # ============================================================
+      # 2. DEBUG - VERIFICA COSA STA ESEGUENDO GITHUB
+      # ============================================================
+      - name: DEBUG - Verifica repository e workflow
+        run: |
+          echo "=========================================="
+          echo "COMMIT UTILIZZATO"
+          echo "=========================================="
+          git rev-parse HEAD
+
+          echo ""
+          echo "=========================================="
+          echo "BRANCH"
+          echo "=========================================="
+          git branch -a
+
+          echo ""
+          echo "=========================================="
+          echo "FILE WORKFLOW PRESENTI"
+          echo "=========================================="
+          find .github/workflows -maxdepth 1 -type f -print
+
+          echo ""
+          echo "=========================================="
+          echo "CONTENUTO run_bot.yml"
+          echo "=========================================="
+          cat .github/workflows/run_bot.yml
+
+          echo ""
+          echo "=========================================="
+          echo "CONTENUTO requirements.txt"
+          echo "=========================================="
+
+          if [ -f requirements.txt ]; then
+            cat requirements.txt
+          else
+            echo "requirements.txt NON PRESENTE"
+          fi
+
+      # ============================================================
+      # 3. CERCA EVENTUALI RIFERIMENTI A pandas_ta
+      # ============================================================
+      - name: DEBUG - Cerca pandas_ta
+        run: |
+          echo "=========================================="
+          echo "RICERCA pandas_ta NEL REPOSITORY"
+          echo "=========================================="
+
+          grep -Rni --exclude-dir=.git "pandas_ta" . || true
+
+          echo ""
+          echo "=========================================="
+          echo "RICERCA install -r requirements.txt"
+          echo "=========================================="
+
+          grep -Rni --exclude-dir=.git "requirements.txt" .github . || true
+
+      # ============================================================
+      # 4. CONFIGURA PYTHON
+      # ============================================================
       - name: Configura Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Installa pacchetti selezionati
+      # ============================================================
+      # 5. VERIFICA VERSIONE PYTHON
+      # ============================================================
+      - name: Verifica Python
+        run: |
+          python --version
+          python -m pip --version
+
+      # ============================================================
+      # 6. INSTALLA SOLO LE LIBRERIE NECESSARIE
+      # ============================================================
+      - name: Installa pacchetti
         run: |
           python -m pip install --upgrade pip
-          pip install requests yfinance pandas
+          python -m pip install requests yfinance pandas
 
+      # ============================================================
+      # 7. VERIFICA INSTALLAZIONE
+      # ============================================================
+      - name: Verifica pacchetti installati
+        run: |
+          python -c "import requests; print('requests OK')"
+          python -c "import yfinance; print('yfinance OK')"
+          python -c "import pandas; print('pandas OK')"
+
+      # ============================================================
+      # 8. VERIFICA CHE pandas_ta NON SIA NECESSARIO
+      # ============================================================
+      - name: Verifica pandas_ta
+        run: |
+          python - <<'PY'
+          try:
+              import pandas_ta
+              print("ATTENZIONE: pandas_ta risulta installato")
+          except ImportError:
+              print("OK: pandas_ta NON è installato")
+          PY
+
+      # ============================================================
+      # 9. ESEGUI MAIN.PY
+      # ============================================================
       - name: Esegui lo script main.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py
+        run: |
+          python main.py
