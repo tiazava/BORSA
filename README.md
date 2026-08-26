@@ -1,1 +1,4 @@
-# BORSA
+requests
+yfinance
+pandas_ta
+pandas
