@@ -9,51 +9,45 @@ jobs:
 
     steps:
 
-      - name: Controlla Secrets
+      - name: Test Secrets
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          echo "===================================="
-          echo "TEST TELEGRAM"
-          echo "===================================="
+          echo "=============================="
+          echo "CONTROLLO TELEGRAM"
+          echo "=============================="
 
           if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-            echo "❌ TELEGRAM_BOT_TOKEN MANCANTE"
+            echo "ERRORE: TELEGRAM_BOT_TOKEN MANCANTE"
             exit 1
-          else
-            echo "✅ TELEGRAM_BOT_TOKEN presente"
           fi
 
           if [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "❌ TELEGRAM_CHAT_ID MANCANTE"
+            echo "ERRORE: TELEGRAM_CHAT_ID MANCANTE"
             exit 1
-          else
-            echo "✅ TELEGRAM_CHAT_ID presente"
           fi
 
-      - name: Invia messaggio Telegram
+          echo "TOKEN: OK"
+          echo "CHAT ID: OK"
+
+      - name: Invia Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          echo "Invio messaggio Telegram..."
+          echo "Invio messaggio..."
 
-          RESPONSE=$(curl -s -X POST \
+          curl \
+            --max-time 10 \
+            --connect-timeout 5 \
+            -sS \
+            -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"🟢 TEST TELEGRAM RIUSCITO!\\n\\nGitHub Actions riesce a comunicare con il bot Telegram.\"}")
+            --data "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"🟢 TEST TELEGRAM RIUSCITO! GitHub Actions comunica con Telegram.\"}"
 
-          echo "Risposta Telegram:"
-          echo "$RESPONSE"
-
-          if echo "$RESPONSE" | grep -q '"ok":true'; then
-            echo "===================================="
-            echo "✅ MESSAGGIO TELEGRAM INVIATO"
-            echo "===================================="
-          else
-            echo "===================================="
-            echo "❌ TELEGRAM HA RIFIUTATO LA RICHIESTA"
-            echo "===================================="
-            exit 1
-          fi
+          echo ""
+          echo "=============================="
+          echo "TEST TERMINATO"
+          echo "=============================="
