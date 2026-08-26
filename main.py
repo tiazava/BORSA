@@ -188,52 +188,65 @@ def analyze_earnings_catalyst(ticker_symbol: str, release_date: str, market_name
             "reasons": reasons,
             "advice": action_advice
         }
-    except Exception:
+    except Exception as e:
+        print(f"Errore durante l'analisi del titolo {ticker_symbol}: {e}")
         return None
 
 def main():
-    upcoming_events = get_upcoming_earnings(days_ahead=30)
-    upcoming_dict = {item.get('symbol'): item.get('date') for item in upcoming_events if item.get('symbol')}
+    try:
+        upcoming_events = get_upcoming_earnings(days_ahead=30)
+        upcoming_dict = {item.get('symbol'): item.get('date') for item in upcoming_events if item.get('symbol')}
 
-    targets = []
-    for ticker in FTSE_MIB:
-        clean_symbol = ticker.replace(".MI", "")
-        if clean_symbol in upcoming_dict:
-            targets.append((ticker, upcoming_dict[clean_symbol], "🇮🇹 FTSE MIB"))
+        targets = []
+        for ticker in FTSE_MIB:
+            clean_symbol = ticker.replace(".MI", "")
+            if clean_symbol in upcoming_dict:
+                targets.append((ticker, upcoming_dict[clean_symbol], "🇮🇹 FTSE MIB"))
 
-    for ticker in DOW_JONES:
-        if ticker in upcoming_dict:
-            targets.append((ticker, upcoming_dict[ticker], "🇺🇸 DOW JONES"))
+        for ticker in DOW_JONES:
+            if ticker in upcoming_dict:
+                targets.append((ticker, upcoming_dict[ticker], "🇺🇸 DOW JONES"))
 
-    signals = []
+        signals = []
 
-    # Scansione automatica di tutti i titoli in calendario
-    for ticker, release_date, market in targets:
-        analysis = analyze_earnings_catalyst(ticker, release_date, market)
-        # Filtra inviando solo i segnali reali (Rating 4-5 oppure 1-2)
-        if analysis and (analysis['score'] >= 4 or analysis['score'] <= 2):
-            signals.append(analysis)
+        # Scansione con gestione eccezioni per singolo titolo
+        for ticker, release_date, market in targets:
+            try:
+                analysis = analyze_earnings_catalyst(ticker, release_date, market)
+                # Invia solo se il punteggio è rilevante (>=4 o <=2)
+                if analysis and (analysis['score'] >= 4 or analysis['score'] <= 2):
+                    signals.append(analysis)
+            except Exception as e:
+                print(f"Errore salto ticker {ticker}: {e}")
+                continue
 
-    # Invio su Telegram solo se ci sono segnali rilevanti
-    if signals:
-        report = "🚨 *AUTOMATIC TRADING SIGNALS - BILANCI & CATALIZZATORI*\n\n"
-        for sig in signals:
-            stars = "⭐" * sig['score']
-            report += f"{sig['market']} | *In uscita tra {sig['days_left']} gg* ({sig['release_date']})\n"
-            report += f"🏢 *{sig['name']}* (`{sig['symbol']}`)\n"
-            report += f"Rating: {stars} ({sig['score']}/5) | *{sig['bias']}*\n"
-            report += "Motivi del segnale:\n"
-            for r in sig['reasons']:
-                report += f"  • {r}\n"
-            report += f"{sig['advice']}\n\n"
+        # Invio su Telegram solo se ci sono segnali rilevanti
+        if signals:
+            report = "🚨 *AUTOMATIC TRADING SIGNALS - BILANCI & CATALIZZATORI*\n\n"
+            for sig in signals:
+                stars = "⭐" * sig['score']
+                report += f"{sig['market']} | *In uscita tra {sig['days_left']} gg* ({sig['release_date']})\n"
+                report += f"🏢 *{sig['name']}* (`{sig['symbol']}`)\n"
+                report += f"Rating: {stars} ({sig['score']}/5) | *{sig['bias']}*\n"
+                report += "Motivi del segnale:\n"
+                for r in sig['reasons']:
+                    report += f"  • {r}\n"
+                report += f"{sig['advice']}\n\n"
 
-        if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": report, "parse_mode": "Markdown"})
+            if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+                chat_ids = TELEGRAM_CHAT_ID.split(",")
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                for cid in chat_ids:
+                    requests.post(url, json={"chat_id": cid.strip(), "text": report, "parse_mode": "Markdown"}, timeout=10)
+                print("Segnalazione Telegram inviata con successo.")
+            else:
+                print("Credenziali Telegram non configurate o vuote. Ecco l'output del report:")
+                print(report)
         else:
-            print(report)
-    else:
-        print("Nessun segnale ad alta priorità rilevato nella scansione odierna.")
+            print("Nessun segnale ad alta priorità rilevato nella scansione odierna.")
+
+    except Exception as general_error:
+        print(f"Errore generale nell'esecuzione dello script: {general_error}")
 
 if __name__ == "__main__":
     main()
