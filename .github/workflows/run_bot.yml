@@ -24,20 +24,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install requests pandas yfinance
 
-      - name: Controlla file
+      - name: Controlla versione codice
         run: |
           echo "======================================"
-          echo "FILE PRESENTI"
+          echo "CODICE SCANNER"
           echo "======================================"
-          ls -la
+          echo "Python:"
+          python --version
           echo ""
-          echo "Controllo pandas_ta:"
-          if grep -R "pandas_ta" . --exclude-dir=.git; then
-            echo "ERRORE: pandas_ta ancora presente!"
-            exit 1
-          else
-            echo "OK: pandas_ta NON presente"
-          fi
+          echo "File main.py:"
+          ls -lh main.py
+          echo ""
+          echo "Prime righe main.py:"
+          head -20 main.py
 
       - name: Esegui scanner
         env:
