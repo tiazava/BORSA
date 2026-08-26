@@ -2,7 +2,7 @@ name: Scansione Segnali Borsa Automatici
 
 on:
   schedule:
-    # 19:30 UTC = 21:30 Italian Time (CEST)
+    # Esegue ogni sera alle 21:30 italiane (19:30 UTC)
     - cron: '30 19 * * *'
   workflow_dispatch:
 
