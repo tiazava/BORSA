@@ -1,36 +1,44 @@
-name: TEST DEFINITIVO
+name: Scansione Segnali Borsa
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: TEST
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Mostra versione Python
         run: |
-          echo "########################################"
-          echo "QUESTO E' IL NUOVO WORKFLOW"
-          echo "########################################"
-
-          echo "COMMIT:"
-          git rev-parse HEAD
-
-          echo "PYTHON:"
+          echo "========================================"
+          echo "PYTHON"
+          echo "========================================"
           python --version
+          python -c "import sys; print(sys.executable)"
 
-          echo "WORKFLOW:"
-          cat .github/workflows/run_bot.yml
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests pandas yfinance
 
-          echo "WORKFLOW PRESENTI:"
-          find .github/workflows -type f -maxdepth 1 -print
+      - name: Verifica dipendenze
+        run: |
+          python -c "import requests; print('requests OK')"
+          python -c "import pandas; print('pandas OK')"
+          python -c "import yfinance; print('yfinance OK')"
 
-          echo "RICERCA pandas_ta:"
-          grep -Rni "pandas_ta" . --exclude-dir=.git || true
-
-          echo "RICERCA requirements:"
-          grep -Rni "requirements.txt" .github --exclude-dir=.git || true
+      - name: Esegui scanner
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python main.py
