@@ -1,6 +1,12 @@
 import os
-import datetime
+import math
+import time
+import datetime as dt
+from dataclasses import dataclass
+from typing import Optional, List, Dict, Tuple
+
 import requests
+import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -8,1247 +14,1057 @@ import yfinance as yf
 # ============================================================
 # CONFIGURAZIONE
 # ============================================================
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "").strip()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+LOOKAHEAD_DAYS = int(os.getenv("LOOKAHEAD_DAYS", "30"))
+MIN_SCORE = int(os.getenv("MIN_SCORE", "75"))        # 75 = 4 stelle
+TOP_N = int(os.getenv("TOP_N", "5"))
+REQUEST_SLEEP = float(os.getenv("REQUEST_SLEEP", "0.15"))
+
+# Limiti di sicurezza dello scoring
+MIN_HISTORY_ROWS = 120
 
 
 # ============================================================
-# FTSE MIB
+# UNIVERSO TITOLI
 # ============================================================
-
 FTSE_MIB = [
-    "A2A.MI",
-    "AMP.MI",
-    "ARISTON.MI",
-    "AZM.MI",
-    "BAMI.MI",
-    "BCA.MI",
-    "BPE.MI",
-    "BZZ.MI",
-    "CPR.MI",
-    "DIA.MI",
-    "ENEL.MI",
-    "ENI.MI",
-    "ERG.MI",
-    "RACE.MI",
-    "FBK.MI",
-    "G.MI",
-    "HER.MI",
-    "INW.MI",
-    "ISP.MI",
-    "LDO.MI",
-    "MB.MI",
-    "MONC.MI",
-    "NEXI.MI",
-    "PIR.MI",
-    "PNT.MI",
-    "PRY.MI",
-    "REC.MI",
-    "RWAY.MI",
-    "SRG.MI",
-    "STLAM.MI",
-    "STMMI.MI",
-    "TIT.MI",
-    "TEN.MI",
-    "TRN.MI",
-    "UCG.MI",
-    "US.MI"
+    "A2A.MI", "AMP.MI", "ARISTON.MI", "AZM.MI", "BAMI.MI", "BCA.MI",
+    "BPE.MI", "BZZ.MI", "CPR.MI", "DIA.MI", "ENEL.MI", "ENI.MI", "ERG.MI",
+    "RACE.MI", "FBK.MI", "G.MI", "HER.MI", "INW.MI", "ISP.MI", "LDO.MI",
+    "MB.MI", "MONC.MI", "NEXI.MI", "PIR.MI", "PNT.MI", "PRY.MI", "REC.MI",
+    "RWAY.MI", "SRG.MI", "STLAM.MI", "STMMI.MI", "TIT.MI", "TEN.MI",
+    "TRN.MI", "UCG.MI", "US.MI"
 ]
-
-
-# ============================================================
-# DOW JONES
-# ============================================================
 
 DOW_JONES = [
-    "AAPL",
-    "AMGN",
-    "AMZN",
-    "AXP",
-    "BA",
-    "CAT",
-    "CRM",
-    "CSCO",
-    "CVX",
-    "DIS",
-    "DOW",
-    "GS",
-    "HD",
-    "HON",
-    "IBM",
-    "INTC",
-    "JNJ",
-    "JPM",
-    "KO",
-    "MCD",
-    "MMM",
-    "MRK",
-    "MSFT",
-    "NKE",
-    "PG",
-    "TRV",
-    "UNH",
-    "V",
-    "VZ",
-    "WMT"
+    "AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX",
+    "DIS", "DOW", "GS", "HD", "HON", "IBM", "JNJ", "JPM", "KO", "MCD",
+    "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WMT"
 ]
-
-
-# ============================================================
-# NASDAQ-100
-# ============================================================
 
 NASDAQ_100 = [
-    "ADBE",
-    "AMD",
-    "ABNB",
-    "ALNY",
-    "AMAT",
-    "APP",
-    "ARM",
-    "ASML",
-    "AVGO",
-    "AXON",
-    "BKNG",
-    "CDNS",
-    "CEG",
-    "CHTR",
-    "CMCSA",
-    "COST",
-    "CRWD",
-    "CSCO",
-    "CTAS",
-    "CSX",
-    "DASH",
-    "DDOG",
-    "DXCM",
-    "EA",
-    "EXC",
-    "FANG",
-    "FAST",
-    "FTNT",
-    "GEHC",
-    "GILD",
-    "GOOG",
-    "GOOGL",
-    "HON",
-    "IDXX",
-    "INTC",
-    "INTU",
-    "ISRG",
-    "KDP",
-    "KHC",
-    "KLAC",
-    "LIN",
-    "LRCX",
-    "MAR",
-    "MCHP",
-    "MDLZ",
-    "MELI",
-    "META",
-    "MNST",
-    "MRVL",
-    "MSFT",
-    "MU",
-    "NFLX",
-    "NVDA",
-    "ODFL",
-    "ON",
-    "ORLY",
-    "PANW",
-    "PAYX",
-    "PCAR",
-    "PDD",
-    "PEP",
-    "PLTR",
-    "PYPL",
-    "QCOM",
-    "REGN",
-    "ROP",
-    "ROST",
-    "SBUX",
-    "SHOP",
-    "SNPS",
-    "TMUS",
-    "TSLA",
-    "TTD",
-    "TTWO",
-    "TXN",
-    "VRSK",
-    "VRTX",
-    "WBD",
-    "WDAY",
-    "WDC",
-    "XEL"
+    "ADBE", "AMD", "ABNB", "ALNY", "AMAT", "APP", "ARM", "ASML", "AVGO",
+    "AXON", "BKNG", "CDNS", "CEG", "CHTR", "CMCSA", "COST", "CRWD", "CSCO",
+    "CTAS", "CSX", "DASH", "DDOG", "DXCM", "EA", "EXC", "FANG", "FAST",
+    "FTNT", "GEHC", "GILD", "GOOG", "GOOGL", "HON", "IDXX", "INTC", "INTU",
+    "ISRG", "KDP", "KHC", "KLAC", "LIN", "LRCX", "MAR", "MCHP", "MDLZ",
+    "MELI", "META", "MNST", "MRVL", "MSFT", "MU", "NFLX", "NVDA", "ODFL",
+    "ON", "ORLY", "PANW", "PAYX", "PCAR", "PDD", "PEP", "PLTR", "PYPL",
+    "QCOM", "REGN", "ROP", "ROST", "SBUX", "SHOP", "SNPS", "TMUS", "TSLA",
+    "TTD", "TTWO", "TXN", "VRSK", "VRTX", "WBD", "WDAY", "WDC", "XEL"
 ]
 
+MARKETS: Dict[str, List[str]] = {
+    "🇮🇹 FTSE MIB": FTSE_MIB,
+    "🇺🇸 DOW JONES": DOW_JONES,
+    "🇺🇸 NASDAQ-100": NASDAQ_100,
+}
+
 
 # ============================================================
-# FUNZIONE GENERICA FINNHUB
+# MODELLI DATI
 # ============================================================
+@dataclass
+class Catalyst:
+    kind: str
+    date: dt.date
+    days_left: int
+    confidence: str        # VERIFIED / SINGLE_SOURCE / CONFLICT
+    sources: List[str]
+    details: str = ""
 
-def finnhub_get(endpoint, params=None):
 
-    if not FINNHUB_API_KEY:
-        print("ERRORE: FINNHUB_API_KEY non configurata.")
+@dataclass
+class AnalysisResult:
+    symbol: str
+    name: str
+    market: str
+    score: int
+    stars: int
+    catalyst: Catalyst
+    technical_score: int
+    analyst_score: int
+    estimates_score: int
+    catalyst_score: int
+    momentum_score: int
+    sentiment_score: int
+    current_price: Optional[float]
+    target_price: Optional[float]
+    upside_pct: Optional[float]
+    reasons: List[str]
+    risks: List[str]
+
+
+# ============================================================
+# UTILITY
+# ============================================================
+def safe_float(value) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        x = float(value)
+        if math.isnan(x) or math.isinf(x):
+            return None
+        return x
+    except Exception:
         return None
 
-    if params is None:
-        params = {}
 
-    params["token"] = FINNHUB_API_KEY
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
-    url = f"https://finnhub.io/api/v1/{endpoint}"
+
+def first_date(value) -> Optional[dt.date]:
+    """Converte vari formati Yahoo/Finnhub in date."""
+    if value is None:
+        return None
+
+    if isinstance(value, dt.datetime):
+        return value.date()
+    if isinstance(value, dt.date):
+        return value
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+
+    if isinstance(value, (list, tuple)) and value:
+        for item in value:
+            d = first_date(item)
+            if d:
+                return d
+
+    if isinstance(value, np.ndarray) and len(value):
+        for item in value.tolist():
+            d = first_date(item)
+            if d:
+                return d
 
     try:
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=15
-        )
-
-        if response.status_code != 200:
-
-            print(
-                f"Finnhub HTTP {response.status_code}: "
-                f"{response.text[:300]}"
-            )
-
-            return None
-
-        return response.json()
-
-    except Exception as error:
-
-        print(f"Errore Finnhub: {error}")
-
+        return pd.to_datetime(value).date()
+    except Exception:
         return None
 
 
+def unique_universe() -> List[Tuple[str, str]]:
+    seen = set()
+    out = []
+    for market, tickers in MARKETS.items():
+        for ticker in tickers:
+            if ticker not in seen:
+                seen.add(ticker)
+                out.append((ticker, market))
+    return out
+
+
+def score_to_stars(score: int) -> int:
+    if score >= 85:
+        return 5
+    if score >= 75:
+        return 4
+    if score >= 60:
+        return 3
+    if score >= 40:
+        return 2
+    return 1
+
+
 # ============================================================
-# CALENDARIO TRIMESTRALI
+# FINNHUB - SOLO US SYMBOLS
+# IMPORTANTE: MAI rimuovere .MI e interrogare Finnhub come simbolo USA
 # ============================================================
+def finnhub_get(endpoint: str, params: Optional[dict] = None):
+    if not FINNHUB_API_KEY:
+        return None
 
-def get_upcoming_earnings(days_ahead=30):
+    params = dict(params or {})
+    params["token"] = FINNHUB_API_KEY
 
-    today = datetime.date.today()
+    try:
+        r = requests.get(
+            f"https://finnhub.io/api/v1/{endpoint}",
+            params=params,
+            timeout=15,
+        )
+        if r.status_code != 200:
+            print(f"Finnhub {endpoint}: HTTP {r.status_code}: {r.text[:180]}")
+            return None
+        return r.json()
+    except Exception as exc:
+        print(f"Finnhub {endpoint}: {exc}")
+        return None
 
-    future = today + datetime.timedelta(
-        days=days_ahead
-    )
 
-    print(
-        f"Ricerca trimestrali dal {today} "
-        f"al {future}"
-    )
+def finnhub_earnings_date_us(symbol: str, today: dt.date, end: dt.date) -> Optional[dt.date]:
+    if symbol.endswith(".MI") or not FINNHUB_API_KEY:
+        return None
 
     data = finnhub_get(
         "calendar/earnings",
-        {
-            "from": today.isoformat(),
-            "to": future.isoformat()
-        }
+        {"from": today.isoformat(), "to": end.isoformat(), "symbol": symbol},
     )
-
     if not data:
-
-        print("Nessun dato ricevuto da Finnhub.")
-
-        return []
-
-    earnings = data.get(
-        "earningsCalendar",
-        []
-    )
-
-    print(
-        f"Trimestrali trovate: {len(earnings)}"
-    )
-
-    return earnings
-
-
-# ============================================================
-# INSIDER TRADING
-# ============================================================
-
-def check_insider_trading(ticker):
-
-    clean_ticker = ticker.replace(
-        ".MI",
-        ""
-    )
-
-    data = finnhub_get(
-        "stock/insider-transactions",
-        {
-            "symbol": clean_ticker
-        }
-    )
-
-    if not data:
-
-        return {
-            "status": "NEUTRAL",
-            "msg": None
-        }
-
-    transactions = data.get(
-        "data",
-        []
-    )
-
-    buys = 0
-    sells = 0
-    net_shares = 0
-
-    for item in transactions[:20]:
-
-        try:
-
-            change = float(
-                item.get(
-                    "change",
-                    0
-                ) or 0
-            )
-
-        except Exception:
-
-            change = 0
-
-        if change > 0:
-
-            buys += 1
-            net_shares += change
-
-        elif change < 0:
-
-            sells += 1
-            net_shares += change
-
-    if buys > sells and net_shares > 0:
-
-        return {
-            "status": "BUY",
-            "msg": (
-                "🟢 Insider Buying: "
-                "acquisti insider superiori alle vendite"
-            )
-        }
-
-    if sells > buys and net_shares < 0:
-
-        return {
-            "status": "SELL",
-            "msg": (
-                "🔴 Insider Selling: "
-                "vendite insider superiori agli acquisti"
-            )
-        }
-
-    return {
-        "status": "NEUTRAL",
-        "msg": None
-    }
-
-
-# ============================================================
-# SHORT INTEREST
-# ============================================================
-
-def check_short_interest(info):
-
-    if not isinstance(info, dict):
-
-        return {
-            "high_short": False,
-            "msg": None
-        }
-
-    try:
-
-        short_percent = info.get(
-            "shortPercentOfFloat"
-        )
-
-        if short_percent is None:
-
-            return {
-                "high_short": False,
-                "msg": None
-            }
-
-        short_percent = float(
-            short_percent
-        )
-
-        if short_percent > 0.05:
-
-            return {
-                "high_short": True,
-                "msg": (
-                    f"⚡ Alto Short Interest "
-                    f"({short_percent * 100:.1f}%)"
-                )
-            }
-
-    except Exception:
-
-        pass
-
-    return {
-        "high_short": False,
-        "msg": None
-    }
-
-
-# ============================================================
-# CAMBI VERTICI
-# ============================================================
-
-def check_executive_changes(ticker):
-
-    clean_ticker = ticker.replace(
-        ".MI",
-        ""
-    )
-
-    data = finnhub_get(
-        "stock/executive",
-        {
-            "symbol": clean_ticker
-        }
-    )
-
-    if not data:
-
-        return []
-
-    executives = data.get(
-        "executive",
-        []
-    )
-
-    results = []
-
-    current_year = str(
-        datetime.date.today().year
-    )
-
-    for executive in executives[:10]:
-
-        title = str(
-            executive.get(
-                "title",
-                ""
-            )
-        ).upper()
-
-        important_role = any(
-            role in title
-            for role in [
-                "CEO",
-                "CFO",
-                "CHIEF EXECUTIVE",
-                "CHIEF FINANCIAL",
-                "PRESIDENT"
-            ]
-        )
-
-        if not important_role:
-            continue
-
-        since = str(
-            executive.get(
-                "since",
-                ""
-            )
-        )
-
-        if current_year in since:
-
-            name = executive.get(
-                "name",
-                "N/D"
-            )
-
-            results.append(
-                f"⚠️ Cambio vertici: "
-                f"{name} "
-                f"({executive.get('title', '')})"
-            )
-
-    return results
-
-
-# ============================================================
-# ANALISI TITOLO
-# ============================================================
-
-def analyze_stock(
-    ticker,
-    release_date,
-    market
-):
-
-    print(
-        f"Analisi {ticker}..."
-    )
-
-    try:
-
-        stock = yf.Ticker(
-            ticker
-        )
-
-        df = stock.history(
-            period="6mo",
-            auto_adjust=False
-        )
-
-        if df.empty:
-
-            print(
-                f"{ticker}: nessun dato Yahoo Finance."
-            )
-
-            return None
-
-        if len(df) < 20:
-
-            print(
-                f"{ticker}: dati insufficienti."
-            )
-
-            return None
-
-        # ====================================================
-        # INFORMAZIONI TITOLO
-        # ====================================================
-
-        try:
-
-            info = stock.info
-
-        except Exception:
-
-            info = {}
-
-        if not isinstance(
-            info,
-            dict
-        ):
-
-            info = {}
-
-        # ====================================================
-        # DATA TRIMESTRALE
-        # ====================================================
-
-        try:
-
-            earnings_date = (
-                datetime.datetime.strptime(
-                    str(release_date),
-                    "%Y-%m-%d"
-                ).date()
-            )
-
-        except Exception:
-
-            return None
-
-        today = datetime.date.today()
-
-        days_left = (
-            earnings_date - today
-        ).days
-
-        # ====================================================
-        # SMA20
-        # ====================================================
-
-        df["SMA20"] = (
-            df["Close"]
-            .rolling(
-                window=20
-            )
-            .mean()
-        )
-
-        latest = df.iloc[-1]
-
-        close = float(
-            latest["Close"]
-        )
-
-        sma20 = latest["SMA20"]
-
-        # ====================================================
-        # VOLUME
-        # ====================================================
-
-        volume_average = (
-            df["Volume"]
-            .tail(20)
-            .mean()
-        )
-
-        current_volume = (
-            latest["Volume"]
-        )
-
-        high_volume = False
-
-        if (
-            pd.notna(volume_average)
-            and volume_average > 0
-        ):
-
-            high_volume = (
-                current_volume
-                > volume_average * 1.20
-            )
-
-        # ====================================================
-        # SCORE INIZIALE
-        # ====================================================
-
-        score = 3
-
-        reasons = []
-
-        # ====================================================
-        # TREND
-        # ====================================================
-
-        if pd.notna(sma20):
-
-            if (
-                close > sma20
-                and high_volume
-            ):
-
-                score += 1
-
-                reasons.append(
-                    "🟢 Prezzo sopra SMA20 "
-                    "con volume superiore alla media"
-                )
-
-            elif close < sma20:
-
-                score -= 1
-
-                reasons.append(
-                    "🔴 Prezzo sotto SMA20"
-                )
-
-            else:
-
-                reasons.append(
-                    "🟡 Prezzo sopra SMA20 "
-                    "senza volume anomalo"
-                )
-
-        # ====================================================
-        # INSIDER
-        # ====================================================
-
-        insider = check_insider_trading(
-            ticker
-        )
-
-        if insider["msg"]:
-
-            reasons.append(
-                insider["msg"]
-            )
-
-            if insider["status"] == "BUY":
-
-                score += 1
-
-            elif insider["status"] == "SELL":
-
-                score -= 1
-
-        # ====================================================
-        # SHORT
-        # ====================================================
-
-        short_data = check_short_interest(
-            info
-        )
-
-        if short_data["msg"]:
-
-            reasons.append(
-                short_data["msg"]
-            )
-
-        # ====================================================
-        # CAMBI VERTICI
-        # ====================================================
-
-        executive_changes = (
-            check_executive_changes(
-                ticker
-            )
-        )
-
-        if executive_changes:
-
-            reasons.extend(
-                executive_changes
-            )
-
-            if days_left <= 15:
-
-                reasons.append(
-                    "⚠️ Cambio vertici vicino "
-                    "alla trimestrale"
-                )
-
-        # ====================================================
-        # LIMITAZIONE SCORE
-        # ====================================================
-
-        score = max(
-            1,
-            min(
-                5,
-                score
-            )
-        )
-
-        # ====================================================
-        # SEGNALE
-        # ====================================================
-
-        if score >= 4:
-
-            bias = (
-                "🚀 SEGNALE RIALZISTA"
-            )
-
-            advice = (
-                "💡 *Segnale:* struttura favorevole "
-                "in prossimità della trimestrale."
-            )
-
-        elif score <= 2:
-
-            bias = (
-                "🔻 SEGNALE RIBASSISTA"
-            )
-
-            advice = (
-                "💡 *Segnale:* struttura debole "
-                "in prossimità della trimestrale."
-            )
-
-        else:
-
-            bias = "⚖️ NEUTRO"
-
-            advice = (
-                "💡 *Segnale:* nessun vantaggio "
-                "operativo evidente."
-            )
-
-        return {
-            "symbol": ticker,
-            "name": info.get(
-                "shortName",
-                ticker
-            ),
-            "market": market,
-            "days_left": days_left,
-            "release_date": release_date,
-            "score": score,
-            "bias": bias,
-            "reasons": reasons,
-            "advice": advice
-        }
-
-    except Exception as error:
-
-        print(
-            f"Errore analizzando {ticker}: "
-            f"{error}"
-        )
-
         return None
 
-
-# ============================================================
-# INVIO TELEGRAM
-# ============================================================
-
-def send_telegram(message):
-
-    print(
-        "======================================"
-    )
-
-    print(
-        "INVIO TELEGRAM"
-    )
-
-    print(
-        "======================================"
-    )
-
-    if not TELEGRAM_BOT_TOKEN:
-
-        print(
-            "ERRORE: TELEGRAM_BOT_TOKEN mancante."
-        )
-
-        return False
-
-    if not TELEGRAM_CHAT_ID:
-
-        print(
-            "ERRORE: TELEGRAM_CHAT_ID mancante."
-        )
-
-        return False
-
-    url = (
-        "https://api.telegram.org/"
-        f"bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    )
-
-    success = True
-
-    chat_ids = TELEGRAM_CHAT_ID.split(",")
-
-    for chat_id in chat_ids:
-
-        chat_id = chat_id.strip()
-
-        if not chat_id:
+    events = data.get("earningsCalendar") or []
+    dates = []
+    for item in events:
+        if str(item.get("symbol", "")).upper() != symbol.upper():
             continue
+        d = first_date(item.get("date"))
+        if d and today <= d <= end:
+            dates.append(d)
+    return min(dates) if dates else None
 
-        try:
 
-            response = requests.post(
-                url,
-                json={
-                    "chat_id": chat_id,
-                    "text": message,
-                    "parse_mode": "Markdown"
-                },
-                timeout=15
-            )
+def finnhub_recommendation_score_us(symbol: str) -> Tuple[int, List[str]]:
+    """0..8 punti extra analyst, solo US."""
+    if symbol.endswith(".MI") or not FINNHUB_API_KEY:
+        return 0, []
 
-            print(
-                f"Telegram Chat ID: "
-                f"{chat_id}"
-            )
+    data = finnhub_get("stock/recommendation", {"symbol": symbol})
+    if not isinstance(data, list) or not data:
+        return 0, []
 
-            print(
-                f"Telegram HTTP: "
-                f"{response.status_code}"
-            )
+    row = data[0]
+    sb = safe_float(row.get("strongBuy")) or 0
+    b = safe_float(row.get("buy")) or 0
+    h = safe_float(row.get("hold")) or 0
+    s = safe_float(row.get("sell")) or 0
+    ss = safe_float(row.get("strongSell")) or 0
+    total = sb + b + h + s + ss
+    if total <= 0:
+        return 0, []
 
-            if response.status_code == 200:
+    bullish = (sb + b) / total
+    bearish = (s + ss) / total
 
-                print(
-                    "MESSAGGIO TELEGRAM INVIATO"
-                )
+    if bullish >= 0.75 and bearish <= 0.10:
+        return 8, [f"🟢 Finnhub analyst consensus molto positivo ({bullish*100:.0f}% Buy/Strong Buy)"]
+    if bullish >= 0.60:
+        return 5, [f"🟢 Finnhub analyst consensus positivo ({bullish*100:.0f}% Buy/Strong Buy)"]
+    if bearish >= 0.25:
+        return -3, [f"🔴 Finnhub analyst consensus debole ({bearish*100:.0f}% Sell/Strong Sell)"]
+    return 1, ["🟡 Finnhub analyst consensus neutrale/misto"]
 
+
+# ============================================================
+# CATALYST: DATE DA YAHOO + FINNHUB (US)
+# ============================================================
+def yahoo_earnings_dates(stock: yf.Ticker, today: dt.date, end: dt.date) -> List[dt.date]:
+    candidates: List[dt.date] = []
+
+    # 1) calendar per-ticker
+    try:
+        cal = stock.calendar
+        if isinstance(cal, dict):
+            for key in ("Earnings Date", "EarningsDate", "earningsDate"):
+                if key in cal:
+                    value = cal[key]
+                    if isinstance(value, (list, tuple, np.ndarray)):
+                        for v in value:
+                            d = first_date(v)
+                            if d:
+                                candidates.append(d)
+                    else:
+                        d = first_date(value)
+                        if d:
+                            candidates.append(d)
+    except Exception:
+        pass
+
+    # 2) earnings_dates per-ticker
+    try:
+        df = stock.get_earnings_dates(limit=12)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            for idx in df.index:
+                d = first_date(idx)
+                if d:
+                    candidates.append(d)
+    except Exception:
+        pass
+
+    valid = sorted({d for d in candidates if today <= d <= end})
+    return valid
+
+
+def yahoo_dividend_date(stock: yf.Ticker, today: dt.date, end: dt.date) -> Optional[dt.date]:
+    """Usa ex-dividend date futura se Yahoo la espone nel calendar/info."""
+    candidates = []
+    try:
+        cal = stock.calendar
+        if isinstance(cal, dict):
+            for key in ("Ex-Dividend Date", "Ex-DividendDate", "exDividendDate"):
+                d = first_date(cal.get(key))
+                if d:
+                    candidates.append(d)
+    except Exception:
+        pass
+
+    try:
+        info = stock.info or {}
+        ts = info.get("exDividendDate")
+        if ts:
+            if isinstance(ts, (int, float)):
+                d = dt.datetime.fromtimestamp(ts).date()
             else:
+                d = first_date(ts)
+            if d:
+                candidates.append(d)
+    except Exception:
+        pass
 
-                success = False
+    valid = sorted({d for d in candidates if today <= d <= end})
+    return valid[0] if valid else None
 
-                print(
-                    "ERRORE TELEGRAM:"
+
+def find_best_catalyst(symbol: str, stock: yf.Ticker) -> Optional[Catalyst]:
+    today = dt.date.today()
+    end = today + dt.timedelta(days=LOOKAHEAD_DAYS)
+
+    yahoo_dates = yahoo_earnings_dates(stock, today, end)
+    yahoo_date = yahoo_dates[0] if yahoo_dates else None
+    finnhub_date = finnhub_earnings_date_us(symbol, today, end)
+
+    # Per Milano NON usiamo mai il ticker ripulito su Finnhub.
+    if symbol.endswith(".MI"):
+        if yahoo_date:
+            return Catalyst(
+                kind="Trimestrale",
+                date=yahoo_date,
+                days_left=(yahoo_date - today).days,
+                confidence="SINGLE_SOURCE",
+                sources=["Yahoo Finance"],
+                details="Ticker Milano verificato senza conversione verso simboli USA",
+            )
+    else:
+        if yahoo_date and finnhub_date:
+            delta = abs((yahoo_date - finnhub_date).days)
+            if delta <= 1:
+                chosen = min(yahoo_date, finnhub_date)
+                return Catalyst(
+                    kind="Trimestrale",
+                    date=chosen,
+                    days_left=(chosen - today).days,
+                    confidence="VERIFIED",
+                    sources=["Yahoo Finance", "Finnhub"],
+                    details="Le due fonti concordano (±1 giorno)",
                 )
+            # Data in conflitto: non la consideriamo un catalyst affidabile.
+            print(f"{symbol}: CONFLITTO earnings Yahoo={yahoo_date} Finnhub={finnhub_date}")
+            return None
 
-                print(
-                    response.text[:500]
-                )
-
-        except Exception as error:
-
-            success = False
-
-            print(
-                f"Errore Telegram: {error}"
+        if yahoo_date:
+            return Catalyst(
+                kind="Trimestrale",
+                date=yahoo_date,
+                days_left=(yahoo_date - today).days,
+                confidence="SINGLE_SOURCE",
+                sources=["Yahoo Finance"],
+                details="Finnhub non disponibile/non ha restituito una data compatibile",
             )
 
-    return success
+        if finnhub_date:
+            return Catalyst(
+                kind="Trimestrale",
+                date=finnhub_date,
+                days_left=(finnhub_date - today).days,
+                confidence="SINGLE_SOURCE",
+                sources=["Finnhub"],
+                details="Yahoo non ha restituito una data compatibile",
+            )
+
+    # Catalyst secondario: ex-dividend. Ha peso inferiore a una trimestrale.
+    div_date = yahoo_dividend_date(stock, today, end)
+    if div_date:
+        return Catalyst(
+            kind="Ex-dividend",
+            date=div_date,
+            days_left=(div_date - today).days,
+            confidence="SINGLE_SOURCE",
+            sources=["Yahoo Finance"],
+            details="Catalyst secondario: data ex-dividend",
+        )
+
+    return None
+
+
+# ============================================================
+# INDICATORI TECNICI
+# ============================================================
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
+    volume = df["Volume"]
+
+    df["EMA20"] = close.ewm(span=20, adjust=False).mean()
+    df["EMA50"] = close.ewm(span=50, adjust=False).mean()
+    df["EMA200"] = close.ewm(span=200, adjust=False).mean()
+
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    df["RSI14"] = 100 - (100 / (1 + rs))
+
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    df["MACD"] = ema12 - ema26
+    df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
+
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    df["ATR14"] = tr.rolling(14).mean()
+
+    df["VOL20"] = volume.rolling(20).mean()
+    df["HIGH20"] = high.rolling(20).max().shift(1)
+    df["LOW20"] = low.rolling(20).min().shift(1)
+
+    # momentum
+    df["RET20"] = close.pct_change(20)
+    df["RET60"] = close.pct_change(60)
+
+    return df
+
+
+def technical_component(df: pd.DataFrame) -> Tuple[int, List[str], List[str]]:
+    """0..25"""
+    reasons, risks = [], []
+    score = 0
+    row = df.iloc[-1]
+
+    close = safe_float(row["Close"])
+    ema20 = safe_float(row["EMA20"])
+    ema50 = safe_float(row["EMA50"])
+    ema200 = safe_float(row["EMA200"])
+    rsi = safe_float(row["RSI14"])
+    macd = safe_float(row["MACD"])
+    macd_sig = safe_float(row["MACD_SIGNAL"])
+    high20 = safe_float(row["HIGH20"])
+
+    if close and ema20 and ema50 and ema200:
+        if close > ema20 > ema50 > ema200:
+            score += 10
+            reasons.append("🟢 Trend forte: prezzo > EMA20 > EMA50 > EMA200")
+        elif close > ema50 > ema200:
+            score += 7
+            reasons.append("🟢 Trend rialzista: prezzo sopra EMA50 ed EMA200")
+        elif close > ema200:
+            score += 4
+            reasons.append("🟡 Prezzo sopra EMA200 ma struttura non perfettamente allineata")
+        else:
+            risks.append("🔴 Prezzo sotto EMA200")
+
+    if rsi is not None:
+        if 52 <= rsi <= 68:
+            score += 5
+            reasons.append(f"🟢 RSI14 favorevole ({rsi:.1f})")
+        elif 45 <= rsi < 52 or 68 < rsi <= 75:
+            score += 2
+            reasons.append(f"🟡 RSI14 neutro/teso ({rsi:.1f})")
+        elif rsi > 75:
+            risks.append(f"⚠️ RSI14 in ipercomprato ({rsi:.1f})")
+        else:
+            risks.append(f"🔴 RSI14 debole ({rsi:.1f})")
+
+    if macd is not None and macd_sig is not None:
+        if macd > macd_sig and macd > 0:
+            score += 5
+            reasons.append("🟢 MACD positivo e sopra la signal line")
+        elif macd > macd_sig:
+            score += 2
+            reasons.append("🟡 MACD in miglioramento")
+        else:
+            risks.append("⚠️ MACD non conferma il momentum")
+
+    if close and high20 and close > high20:
+        score += 5
+        reasons.append("🔥 Breakout sopra i massimi delle ultime 20 sedute")
+    elif close and high20 and close >= high20 * 0.98:
+        score += 3
+        reasons.append("🟢 Prezzo vicino ai massimi delle ultime 20 sedute")
+
+    return int(clamp(score, 0, 25)), reasons, risks
+
+
+# ============================================================
+# MOMENTUM / VOLUME 0..10
+# ============================================================
+def momentum_component(df: pd.DataFrame) -> Tuple[int, List[str], List[str]]:
+    reasons, risks = [], []
+    score = 0
+    row = df.iloc[-1]
+
+    ret20 = safe_float(row["RET20"])
+    ret60 = safe_float(row["RET60"])
+    vol20 = safe_float(row["VOL20"])
+    vol = safe_float(row["Volume"])
+
+    if ret20 is not None:
+        if ret20 >= 0.08:
+            score += 4
+            reasons.append(f"🟢 Momentum 1 mese +{ret20*100:.1f}%")
+        elif ret20 >= 0.02:
+            score += 2
+            reasons.append(f"🟢 Momentum 1 mese +{ret20*100:.1f}%")
+        elif ret20 < -0.05:
+            risks.append(f"🔴 Momentum 1 mese {ret20*100:.1f}%")
+
+    if ret60 is not None:
+        if ret60 >= 0.15:
+            score += 3
+            reasons.append(f"🟢 Momentum 3 mesi +{ret60*100:.1f}%")
+        elif ret60 >= 0.04:
+            score += 2
+            reasons.append(f"🟢 Momentum 3 mesi +{ret60*100:.1f}%")
+        elif ret60 < -0.08:
+            risks.append(f"🔴 Momentum 3 mesi {ret60*100:.1f}%")
+
+    if vol and vol20 and vol20 > 0:
+        ratio = vol / vol20
+        if ratio >= 1.5:
+            score += 3
+            reasons.append(f"🔥 Volume {ratio:.1f}x la media 20 giorni")
+        elif ratio >= 1.15:
+            score += 2
+            reasons.append(f"🟢 Volume sopra media ({ratio:.1f}x)")
+        elif ratio < 0.65:
+            risks.append("⚠️ Volumi deboli rispetto alla media")
+
+    return int(clamp(score, 0, 10)), reasons, risks
+
+
+# ============================================================
+# ANALYST / TARGET PRICE 0..20
+# ============================================================
+def analyst_component(stock: yf.Ticker, symbol: str, current_price: float) -> Tuple[int, Optional[float], Optional[float], List[str], List[str]]:
+    reasons, risks = [], []
+    score = 0
+    target = None
+    upside = None
+
+    # Target price Yahoo
+    try:
+        targets = stock.get_analyst_price_targets()
+        if isinstance(targets, dict):
+            target = safe_float(targets.get("mean") or targets.get("median"))
+    except Exception:
+        targets = None
+
+    # fallback info
+    if target is None:
+        try:
+            info = stock.info or {}
+            target = safe_float(info.get("targetMeanPrice") or info.get("targetMedianPrice"))
+        except Exception:
+            pass
+
+    if target and current_price > 0:
+        upside = (target / current_price - 1.0) * 100.0
+        if upside >= 20:
+            score += 10
+            reasons.append(f"🎯 Target medio analisti: +{upside:.1f}%")
+        elif upside >= 12:
+            score += 8
+            reasons.append(f"🎯 Target medio analisti: +{upside:.1f}%")
+        elif upside >= 5:
+            score += 5
+            reasons.append(f"🟢 Target medio analisti: +{upside:.1f}%")
+        elif upside >= 0:
+            score += 2
+            reasons.append(f"🟡 Target medio analisti poco sopra il prezzo (+{upside:.1f}%)")
+        else:
+            risks.append(f"🔴 Target medio analisti sotto il prezzo ({upside:.1f}%)")
+
+    # Recommendations Yahoo
+    try:
+        rec = stock.get_recommendations_summary()
+        if isinstance(rec, pd.DataFrame) and not rec.empty:
+            row = rec.iloc[0]
+            sb = safe_float(row.get("strongBuy")) or 0
+            b = safe_float(row.get("buy")) or 0
+            h = safe_float(row.get("hold")) or 0
+            s = safe_float(row.get("sell")) or 0
+            ss = safe_float(row.get("strongSell")) or 0
+            total = sb + b + h + s + ss
+            if total > 0:
+                bullish = (sb + b) / total
+                bearish = (s + ss) / total
+                if bullish >= 0.75 and bearish <= 0.10:
+                    score += 10
+                    reasons.append(f"🟢 Yahoo consensus molto positivo ({bullish*100:.0f}% Buy/Strong Buy)")
+                elif bullish >= 0.60:
+                    score += 7
+                    reasons.append(f"🟢 Yahoo consensus positivo ({bullish*100:.0f}% Buy/Strong Buy)")
+                elif bearish >= 0.25:
+                    risks.append(f"🔴 Quota Sell/Strong Sell elevata ({bearish*100:.0f}%)")
+                else:
+                    score += 2
+                    reasons.append("🟡 Consensus analisti misto")
+    except Exception:
+        pass
+
+    # Finnhub aggiunge conferma solo US; non deve gonfiare oltre il massimo.
+    fscore, freasons = finnhub_recommendation_score_us(symbol)
+    if fscore > 0:
+        score += min(4, fscore // 2)
+        reasons.extend(freasons)
+    elif fscore < 0:
+        risks.extend(freasons)
+
+    return int(clamp(score, 0, 20)), target, upside, reasons, risks
+
+
+# ============================================================
+# REVISIONI EPS / RICAVI 0..15
+# ============================================================
+def estimates_component(stock: yf.Ticker) -> Tuple[int, List[str], List[str]]:
+    reasons, risks = [], []
+    score = 0
+
+    # EPS revisions
+    try:
+        rev = stock.get_eps_revisions()
+        if isinstance(rev, pd.DataFrame) and not rev.empty:
+            # preferisce trimestre corrente (0q), altrimenti prima riga
+            row = rev.loc["0q"] if "0q" in rev.index else rev.iloc[0]
+            up7 = safe_float(row.get("upLast7days")) or 0
+            up30 = safe_float(row.get("upLast30days")) or 0
+            down7 = safe_float(row.get("downLast7Days")) or safe_float(row.get("downLast7days")) or 0
+            down30 = safe_float(row.get("downLast30Days")) or safe_float(row.get("downLast30days")) or 0
+            net = (up7 + up30) - (down7 + down30)
+            if net >= 4:
+                score += 8
+                reasons.append("🟢 Revisioni EPS nettamente positive")
+            elif net >= 1:
+                score += 5
+                reasons.append("🟢 Revisioni EPS positive")
+            elif net <= -3:
+                risks.append("🔴 Revisioni EPS negative")
+    except Exception:
+        pass
+
+    # Earnings estimate growth
+    try:
+        ee = stock.get_earnings_estimate()
+        if isinstance(ee, pd.DataFrame) and not ee.empty:
+            row = ee.loc["0q"] if "0q" in ee.index else ee.iloc[0]
+            growth = safe_float(row.get("growth"))
+            if growth is not None:
+                # Yahoo solitamente usa frazione, es. 0.12 = 12%
+                if growth >= 0.15:
+                    score += 4
+                    reasons.append(f"🟢 Crescita EPS attesa +{growth*100:.1f}%")
+                elif growth >= 0.05:
+                    score += 2
+                    reasons.append(f"🟢 Crescita EPS attesa +{growth*100:.1f}%")
+                elif growth < -0.10:
+                    risks.append(f"🔴 EPS atteso in calo {growth*100:.1f}%")
+    except Exception:
+        pass
+
+    # Revenue estimate growth
+    try:
+        re = stock.get_revenue_estimate()
+        if isinstance(re, pd.DataFrame) and not re.empty:
+            row = re.loc["0q"] if "0q" in re.index else re.iloc[0]
+            growth = safe_float(row.get("growth"))
+            if growth is not None:
+                if growth >= 0.10:
+                    score += 3
+                    reasons.append(f"🟢 Crescita ricavi attesa +{growth*100:.1f}%")
+                elif growth >= 0.03:
+                    score += 1
+                    reasons.append(f"🟢 Ricavi attesi +{growth*100:.1f}%")
+                elif growth < -0.08:
+                    risks.append(f"🔴 Ricavi attesi in calo {growth*100:.1f}%")
+    except Exception:
+        pass
+
+    return int(clamp(score, 0, 15)), reasons, risks
+
+
+# ============================================================
+# NEWS SENTIMENT / UPGRADE 0..10
+# Evita NLP inventato: usa solo segnali strutturati quando disponibili.
+# ============================================================
+def sentiment_component(stock: yf.Ticker) -> Tuple[int, List[str], List[str]]:
+    reasons, risks = [], []
+    score = 0
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)
+
+    try:
+        ud = stock.get_upgrades_downgrades()
+        if isinstance(ud, pd.DataFrame) and not ud.empty:
+            recent = ud.copy()
+            try:
+                idx = pd.to_datetime(recent.index, utc=True)
+                recent = recent[idx >= cutoff]
+            except Exception:
+                recent = recent.head(20)
+
+            upgrades = 0
+            downgrades = 0
+            for _, row in recent.head(20).iterrows():
+                action = str(row.get("action", "")).lower()
+                if "up" in action:
+                    upgrades += 1
+                elif "down" in action:
+                    downgrades += 1
+
+            net = upgrades - downgrades
+            if net >= 3:
+                score += 7
+                reasons.append(f"🟢 Upgrade analisti recenti: {upgrades} vs downgrade {downgrades}")
+            elif net >= 1:
+                score += 4
+                reasons.append(f"🟢 Upgrade analisti prevalenti: {upgrades} vs {downgrades}")
+            elif net <= -2:
+                risks.append(f"🔴 Downgrade analisti prevalenti: {downgrades} vs {upgrades}")
+    except Exception:
+        pass
+
+    # News count come conferma di attenzione, non come sentiment semantico.
+    try:
+        news = stock.news or []
+        recent_count = 0
+        for item in news[:30]:
+            ts = item.get("providerPublishTime")
+            if ts:
+                d = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
+                if d >= cutoff:
+                    recent_count += 1
+        if recent_count >= 8:
+            score += 3
+            reasons.append(f"📰 Elevata attenzione informativa: {recent_count} news recenti")
+        elif recent_count >= 3:
+            score += 1
+    except Exception:
+        pass
+
+    return int(clamp(score, 0, 10)), reasons, risks
+
+
+# ============================================================
+# CATALYST SCORE 0..20
+# ============================================================
+def catalyst_component(catalyst: Catalyst) -> Tuple[int, List[str], List[str]]:
+    reasons, risks = [], []
+    score = 0
+
+    if catalyst.kind == "Trimestrale":
+        score += 10
+    elif catalyst.kind == "Ex-dividend":
+        score += 4
+
+    if catalyst.confidence == "VERIFIED":
+        score += 6
+        reasons.append("✅ Data catalyst verificata da 2 fonti")
+    elif catalyst.confidence == "SINGLE_SOURCE":
+        score += 3
+        reasons.append(f"🟡 Data catalyst da una fonte: {', '.join(catalyst.sources)}")
+    else:
+        risks.append("🔴 Data catalyst in conflitto")
+
+    if 1 <= catalyst.days_left <= 14:
+        score += 4
+        reasons.append(f"📅 Catalyst vicino: tra {catalyst.days_left} giorni")
+    elif 15 <= catalyst.days_left <= LOOKAHEAD_DAYS:
+        score += 2
+        reasons.append(f"📅 Catalyst tra {catalyst.days_left} giorni")
+
+    return int(clamp(score, 0, 20)), reasons, risks
+
+
+# ============================================================
+# ANALISI COMPLETA
+# ============================================================
+def analyze_stock(symbol: str, market: str) -> Optional[AnalysisResult]:
+    print(f"\n--- {symbol} | {market} ---")
+    stock = yf.Ticker(symbol)
+
+    # 1) Prima il catalyst: se non esiste entro 30 gg non sprechiamo altre chiamate.
+    catalyst = find_best_catalyst(symbol, stock)
+    if catalyst is None:
+        print("Nessun catalyst affidabile entro finestra.")
+        return None
+
+    # 2) Storico per tecnica
+    try:
+        df = stock.history(period="1y", interval="1d", auto_adjust=False)
+    except Exception as exc:
+        print(f"history error: {exc}")
+        return None
+
+    if df is None or df.empty or len(df) < MIN_HISTORY_ROWS:
+        print("Storico insufficiente")
+        return None
+
+    df = calculate_indicators(df)
+    latest = df.iloc[-1]
+    current_price = safe_float(latest.get("Close"))
+    if not current_price or current_price <= 0:
+        return None
+
+    # Nome
+    try:
+        info = stock.info or {}
+        name = info.get("shortName") or info.get("longName") or symbol
+    except Exception:
+        name = symbol
+
+    technical_score, r1, k1 = technical_component(df)
+    momentum_score, r2, k2 = momentum_component(df)
+    analyst_score, target, upside, r3, k3 = analyst_component(stock, symbol, current_price)
+    estimates_score, r4, k4 = estimates_component(stock)
+    catalyst_score, r5, k5 = catalyst_component(catalyst)
+    sentiment_score, r6, k6 = sentiment_component(stock)
+
+    raw_score = (
+        technical_score
+        + analyst_score
+        + estimates_score
+        + catalyst_score
+        + momentum_score
+        + sentiment_score
+    )
+
+    # Penalizzazioni di affidabilità / rischio.
+    penalty = 0
+    if catalyst.confidence == "SINGLE_SOURCE":
+        penalty += 3
+    if upside is not None and upside < -5:
+        penalty += 7
+    if len(k1) >= 2:
+        penalty += 3
+
+    score = int(clamp(raw_score - penalty, 0, 100))
+    stars = score_to_stars(score)
+
+    reasons = r1 + r2 + r3 + r4 + r5 + r6
+    risks = k1 + k2 + k3 + k4 + k5 + k6
+
+    print(
+        f"score={score} tech={technical_score} analyst={analyst_score} "
+        f"est={estimates_score} catalyst={catalyst_score} "
+        f"mom={momentum_score} sentiment={sentiment_score}"
+    )
+
+    return AnalysisResult(
+        symbol=symbol,
+        name=str(name),
+        market=market,
+        score=score,
+        stars=stars,
+        catalyst=catalyst,
+        technical_score=technical_score,
+        analyst_score=analyst_score,
+        estimates_score=estimates_score,
+        catalyst_score=catalyst_score,
+        momentum_score=momentum_score,
+        sentiment_score=sentiment_score,
+        current_price=current_price,
+        target_price=target,
+        upside_pct=upside,
+        reasons=reasons,
+        risks=risks,
+    )
+
+
+# ============================================================
+# TELEGRAM
+# ============================================================
+def send_telegram(message: str) -> bool:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram non configurato; report stampato soltanto a console.")
+        print(message)
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    ok = True
+
+    # Telegram ha limiti di lunghezza: spezza in chunk sicuri.
+    chunks = []
+    remaining = message
+    while len(remaining) > 3900:
+        cut = remaining.rfind("\n\n", 0, 3900)
+        if cut < 1000:
+            cut = 3900
+        chunks.append(remaining[:cut])
+        remaining = remaining[cut:].lstrip()
+    chunks.append(remaining)
+
+    for chat_id in [x.strip() for x in TELEGRAM_CHAT_ID.split(",") if x.strip()]:
+        for chunk in chunks:
+            try:
+                r = requests.post(
+                    url,
+                    json={
+                        "chat_id": chat_id,
+                        "text": chunk,
+                        "parse_mode": "Markdown",
+                        "disable_web_page_preview": True,
+                    },
+                    timeout=15,
+                )
+                if r.status_code != 200:
+                    ok = False
+                    print(f"Telegram {chat_id}: HTTP {r.status_code}: {r.text[:300]}")
+            except Exception as exc:
+                ok = False
+                print(f"Telegram {chat_id}: {exc}")
+    return ok
+
+
+# ============================================================
+# REPORT
+# ============================================================
+def fmt_price(x: Optional[float]) -> str:
+    return "N/D" if x is None else f"{x:.2f}"
+
+
+def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: int) -> str:
+    today = dt.date.today()
+
+    if not results:
+        return (
+            "✅ *SCANSIONE BORSA COMPLETATA*\n\n"
+            f"📅 {today.strftime('%d/%m/%Y')}\n"
+            f"🔎 Titoli unici analizzati: *{scanned}*\n"
+            f"📅 Titoli con catalyst entro {LOOKAHEAD_DAYS} gg: *{catalysts_found}*\n\n"
+            f"📊 *Nessuna opportunità da 4/5 o 5/5 oggi.*\n\n"
+            f"Soglia minima: *{MIN_SCORE}/100*.\n"
+            "Il bot non invia titoli mediocri solo per riempire il report."
+        )
+
+    report = (
+        "🚀 *TOP OPPORTUNITÀ BORSA*\n"
+        f"📅 {today.strftime('%d/%m/%Y')}\n"
+        f"🎯 Solo rating ≥ *{MIN_SCORE}/100*\n"
+        f"🔎 Universo: FTSE MIB + Dow Jones + Nasdaq-100\n\n"
+    )
+
+    for i, r in enumerate(results[:TOP_N], start=1):
+        stars = "⭐" * r.stars
+        confidence = {
+            "VERIFIED": "✅ verificata",
+            "SINGLE_SOURCE": "🟡 singola fonte",
+            "CONFLICT": "🔴 conflitto",
+        }.get(r.catalyst.confidence, r.catalyst.confidence)
+
+        report += (
+            f"*#{i} {r.name}* (`{r.symbol}`)\n"
+            f"{r.market}\n"
+            f"{stars} *{r.score}/100*\n\n"
+            f"📅 *Catalyst:* {r.catalyst.kind} {r.catalyst.date.strftime('%d/%m/%Y')} "
+            f"(tra {r.catalyst.days_left} gg)\n"
+            f"🔐 Data: {confidence} — {', '.join(r.catalyst.sources)}\n\n"
+            f"📈 Tecnica: *{r.technical_score}/25*\n"
+            f"🧠 Analisti/target: *{r.analyst_score}/20*\n"
+            f"📊 Stime/revisioni: *{r.estimates_score}/15*\n"
+            f"📅 Catalyst: *{r.catalyst_score}/20*\n"
+            f"🔥 Momentum/volume: *{r.momentum_score}/10*\n"
+            f"📰 Upgrade/news: *{r.sentiment_score}/10*\n\n"
+            f"💵 Prezzo: *{fmt_price(r.current_price)}*\n"
+        )
+
+        if r.target_price is not None:
+            report += f"🎯 Target medio: *{fmt_price(r.target_price)}*"
+            if r.upside_pct is not None:
+                sign = "+" if r.upside_pct >= 0 else ""
+                report += f" ({sign}{r.upside_pct:.1f}%)"
+            report += "\n"
+
+        best_reasons = r.reasons[:6]
+        if best_reasons:
+            report += "\n*Perché è in classifica:*\n"
+            for reason in best_reasons:
+                report += f"• {reason}\n"
+
+        if r.risks:
+            report += "\n*Rischi principali:*\n"
+            for risk in r.risks[:3]:
+                report += f"• {risk}\n"
+
+        report += "\n——————————————\n\n"
+
+    report += (
+        f"Titoli con catalyst trovati: *{catalysts_found}*\n"
+        f"Titoli mostrati: *{min(len(results), TOP_N)}*\n\n"
+        "⚠️ Segnali quantitativi automatici a supporto dell'analisi; "
+        "non costituiscono consulenza finanziaria."
+    )
+    return report
 
 
 # ============================================================
 # MAIN
 # ============================================================
-
 def main():
+    print("=" * 70)
+    print("MARKET OPPORTUNITY SCANNER 2.0")
+    print("FTSE MIB + DOW JONES + NASDAQ-100")
+    print("Solo opportunità 4/5 e 5/5")
+    print("=" * 70)
 
-    print(
-        "======================================"
+    universe = unique_universe()
+    results: List[AnalysisResult] = []
+    catalysts_found = 0
+
+    for idx, (symbol, market) in enumerate(universe, start=1):
+        print(f"[{idx}/{len(universe)}] {symbol}")
+        try:
+            result = analyze_stock(symbol, market)
+            if result is not None:
+                catalysts_found += 1
+                # SOLO rialzisti forti: niente 1/5 e 2/5.
+                if result.score >= MIN_SCORE and result.stars >= 4:
+                    results.append(result)
+        except Exception as exc:
+            print(f"Errore {symbol}: {exc}")
+
+        if REQUEST_SLEEP > 0:
+            time.sleep(REQUEST_SLEEP)
+
+    # Migliori prima. A parità di score preferiamo catalyst verificato e più vicino.
+    results.sort(
+        key=lambda r: (
+            r.score,
+            1 if r.catalyst.confidence == "VERIFIED" else 0,
+            -r.catalyst.days_left,
+        ),
+        reverse=True,
     )
 
-    print(
-        "AUTOMATIC TRADING SIGNALS"
+    # Limita davvero il report ai migliori.
+    results = results[:TOP_N]
+
+    report = build_report(
+        results=results,
+        scanned=len(universe),
+        catalysts_found=catalysts_found,
     )
 
-    print(
-        "EARNINGS & CATALYST SCANNER"
-    )
+    print("\n" + report)
+    send_telegram(report)
 
-    print(
-        "======================================"
-    )
-
-    today = datetime.date.today()
-
-    print(
-        f"Data scansione: "
-        f"{today.strftime('%d/%m/%Y')}"
-    )
-
-    # ========================================================
-    # CONTROLLO CONFIGURAZIONE
-    # ========================================================
-
-    if not FINNHUB_API_KEY:
-
-        print(
-            "ERRORE: FINNHUB_API_KEY mancante."
-        )
-
-        send_telegram(
-            "🔴 *SCANNER BORSA - ERRORE*\n\n"
-            "FINNHUB_API_KEY non configurata."
-        )
-
-        return
-
-    if not TELEGRAM_BOT_TOKEN:
-
-        print(
-            "ERRORE: TELEGRAM_BOT_TOKEN mancante."
-        )
-
-        return
-
-    if not TELEGRAM_CHAT_ID:
-
-        print(
-            "ERRORE: TELEGRAM_CHAT_ID mancante."
-        )
-
-        return
-
-    # ========================================================
-    # RECUPERA TRIMESTRALI
-    # ========================================================
-
-    upcoming_events = (
-        get_upcoming_earnings(
-            days_ahead=30
-        )
-    )
-
-    # ========================================================
-    # NESSUNA TRIMESTRALE
-    # ========================================================
-
-    if not upcoming_events:
-
-        report = (
-            "🟢 *SCANSIONE BORSA COMPLETATA*\n\n"
-            f"📅 {today.strftime('%d/%m/%Y')}\n\n"
-            "📊 *Per oggi non abbiamo titoli da proporti.*\n\n"
-            "La scansione è stata eseguita "
-            "correttamente."
-        )
-
-        print(report)
-
-        send_telegram(
-            report
-        )
-
-        return
-
-    # ========================================================
-    # DIZIONARIO EARNINGS
-    # ========================================================
-
-    upcoming_dict = {}
-
-    for item in upcoming_events:
-
-        symbol = item.get(
-            "symbol"
-        )
-
-        date = item.get(
-            "date"
-        )
-
-        if symbol and date:
-
-            upcoming_dict[
-                symbol.upper()
-            ] = date
-
-    # ========================================================
-    # TARGET
-    # ========================================================
-
-    targets = []
-
-    # ========================================================
-    # FTSE MIB
-    # ========================================================
-
-    for ticker in FTSE_MIB:
-
-        clean_symbol = (
-            ticker
-            .replace(
-                ".MI",
-                ""
-            )
-            .upper()
-        )
-
-        if clean_symbol in upcoming_dict:
-
-            targets.append(
-                (
-                    ticker,
-                    upcoming_dict[
-                        clean_symbol
-                    ],
-                    "🇮🇹 FTSE MIB"
-                )
-            )
-
-    # ========================================================
-    # DOW JONES
-    # ========================================================
-
-    for ticker in DOW_JONES:
-
-        if ticker.upper() in upcoming_dict:
-
-            targets.append(
-                (
-                    ticker,
-                    upcoming_dict[
-                        ticker.upper()
-                    ],
-                    "🇺🇸 DOW JONES"
-                )
-            )
-
-    # ========================================================
-    # NASDAQ-100
-    # ========================================================
-
-    for ticker in NASDAQ_100:
-
-        if ticker.upper() in upcoming_dict:
-
-            targets.append(
-                (
-                    ticker,
-                    upcoming_dict[
-                        ticker.upper()
-                    ],
-                    "🇺🇸 NASDAQ-100"
-                )
-            )
-
-    # ========================================================
-    # RIEPILOGO TARGET
-    # ========================================================
-
-    print(
-        "======================================"
-    )
-
-    print(
-        f"Titoli da analizzare: {len(targets)}"
-    )
-
-    print(
-        "======================================"
-    )
-
-    # ========================================================
-    # ANALISI
-    # ========================================================
-
-    signals = []
-
-    for (
-        ticker,
-        release_date,
-        market
-    ) in targets:
-
-        result = analyze_stock(
-            ticker,
-            release_date,
-            market
-        )
-
-        if result is None:
-            continue
-
-        if (
-            result["score"] >= 4
-            or result["score"] <= 2
-        ):
-
-            signals.append(
-                result
-            )
-
-    # ========================================================
-    # NESSUN SEGNALE
-    # ========================================================
-
-    if not signals:
-
-        report = (
-            "🟢 *SCANSIONE BORSA COMPLETATA*\n\n"
-            f"📅 {today.strftime('%d/%m/%Y')}\n\n"
-            "📊 *Per oggi non abbiamo titoli da proporti.*\n\n"
-            f"🔎 Titoli con trimestrale nei prossimi "
-            f"30 giorni: *{len(targets)}*\n\n"
-            "Nessun titolo ha raggiunto il livello "
-            "di segnale richiesto.\n\n"
-            "Mercati analizzati:\n"
-            "🇮🇹 FTSE MIB\n"
-            "🇺🇸 Dow Jones\n"
-            "🇺🇸 NASDAQ-100"
-        )
-
-        print(report)
-
-        send_telegram(
-            report
-        )
-
-        return
-
-    # ========================================================
-    # ORDINA SEGNALI
-    # ========================================================
-
-    signals.sort(
-        key=lambda x: x["score"],
-        reverse=True
-    )
-
-    # ========================================================
-    # CREA REPORT
-    # ========================================================
-
-    report = (
-        "🚨 *AUTOMATIC TRADING SIGNALS*\n"
-        "*BILANCI & CATALIZZATORI*\n\n"
-    )
-
-    report += (
-        f"📅 {today.strftime('%d/%m/%Y')}\n"
-        f"📊 Segnali trovati: "
-        f"*{len(signals)}*\n\n"
-    )
-
-    # ========================================================
-    # REPORT SEGNALI
-    # ========================================================
-
-    for signal in signals:
-
-        stars = (
-            "⭐"
-            * signal["score"]
-        )
-
-        report += (
-            f"{signal['market']}\n"
-            f"📅 Trimestrale: "
-            f"*{signal['release_date']}* "
-            f"(tra {signal['days_left']} gg)\n"
-            f"🏢 *{signal['name']}* "
-            f"(`{signal['symbol']}`)\n"
-            f"Rating: {stars} "
-            f"({signal['score']}/5)\n"
-            f"*{signal['bias']}*\n\n"
-        )
-
-        report += (
-            "*Motivi del segnale:*\n"
-        )
-
-        for reason in signal["reasons"]:
-
-            report += (
-                f"• {reason}\n"
-            )
-
-        report += (
-            f"\n{signal['advice']}\n\n"
-        )
-
-    # ========================================================
-    # AVVISO
-    # ========================================================
-
-    report += (
-        "⚠️ *Nota:* questi segnali sono "
-        "generati automaticamente e non "
-        "costituiscono consulenza finanziaria."
-    )
-
-    # ========================================================
-    # INVIO TELEGRAM
-    # ========================================================
-
-    send_telegram(
-        report
-    )
-
-
-# ============================================================
-# AVVIO
-# ============================================================
 
 if __name__ == "__main__":
-
     try:
-
         main()
-
-    except Exception as error:
-
-        print(
-            f"ERRORE GENERALE: {error}"
-        )
-
+    except Exception as exc:
+        msg = f"🔴 *SCANNER BORSA - ERRORE*\n\n`{str(exc)[:800]}`"
+        print(msg)
         try:
-
-            send_telegram(
-                "🔴 *SCANNER BORSA - ERRORE*\n\n"
-                f"Errore:\n`{str(error)[:500]}`"
-            )
-
+            send_telegram(msg)
         except Exception:
-
             pass
