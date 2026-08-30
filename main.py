@@ -4,6 +4,8 @@ import time
 import datetime as dt
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
+from io import StringIO
+import re
 
 import requests
 import numpy as np
@@ -57,11 +59,129 @@ NASDAQ_100 = [
     "TTD", "TTWO", "TXN", "VRSK", "VRTX", "WBD", "WDAY", "WDC", "XEL"
 ]
 
-MARKETS: Dict[str, List[str]] = {
+# Mercati base sempre disponibili. Gli altri indici vengono caricati
+# dinamicamente da tabelle pubbliche; se un indice non è raggiungibile,
+# gli altri continuano comunque a essere analizzati.
+BASE_MARKETS: Dict[str, List[str]] = {
     "🇮🇹 FTSE MIB": FTSE_MIB,
     "🇺🇸 DOW JONES": DOW_JONES,
     "🇺🇸 NASDAQ-100": NASDAQ_100,
 }
+
+INDEX_SOURCES = {
+    "🇩🇪 DAX 40": {
+        "url": "https://en.wikipedia.org/wiki/DAX",
+        "columns": ["Ticker symbol", "Ticker", "Symbol"],
+        "suffix": ".DE",
+    },
+    "🇫🇷 CAC 40": {
+        "url": "https://en.wikipedia.org/wiki/CAC_40",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".PA",
+    },
+    "🇬🇧 FTSE 100": {
+        "url": "https://en.wikipedia.org/wiki/FTSE_100_Index",
+        "columns": ["EPIC", "Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".L",
+    },
+    "🇳🇱 AEX": {
+        "url": "https://en.wikipedia.org/wiki/AEX_index",
+        "columns": ["Ticker symbol", "Ticker", "Symbol"],
+        "suffix": ".AS",
+    },
+    "🇨🇭 SMI": {
+        "url": "https://en.wikipedia.org/wiki/Swiss_Market_Index",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".SW",
+    },
+    "🇨🇦 TSX 60": {
+        "url": "https://en.wikipedia.org/wiki/S%26P/TSX_60",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".TO",
+    },
+    "🇯🇵 Nikkei 225": {
+        "url": "https://en.wikipedia.org/wiki/Nikkei_225",
+        "columns": ["Code", "Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".T",
+    },
+}
+
+def _flatten_column(col) -> str:
+    if isinstance(col, tuple):
+        return " ".join(str(x) for x in col if str(x) != "nan").strip()
+    return str(col).strip()
+
+def _normalize_exchange_ticker(raw: str, suffix: str) -> Optional[str]:
+    value = str(raw).strip().upper()
+    value = re.sub(r"\[[^\]]+\]", "", value).strip()
+    if not value or value in {"NAN", "NONE", "N/A", "-"}:
+        return None
+
+    # Nikkei: codici numerici a 4 cifre.
+    if suffix == ".T":
+        m = re.search(r"\b(\d{4})\b", value)
+        return f"{m.group(1)}.T" if m else None
+
+    # Rimuove eventuali suffissi di mercato già presenti nella tabella.
+    for known in (".DE", ".PA", ".L", ".AS", ".SW", ".TO"):
+        if value.endswith(known):
+            value = value[:-len(known)]
+            break
+
+    value = value.split()[0].strip()
+    # Yahoo usa spesso '-' per classi azionarie.
+    if suffix in {".L", ".TO"}:
+        value = value.replace(".", "-")
+    value = re.sub(r"[^A-Z0-9\-]", "", value)
+    if not value:
+        return None
+    return value + suffix
+
+def load_index_from_public_table(market: str, cfg: dict) -> List[str]:
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 MarketOpportunityScanner/3.0"}
+        r = requests.get(cfg["url"], headers=headers, timeout=20)
+        r.raise_for_status()
+        tables = pd.read_html(StringIO(r.text))
+
+        for table in tables:
+            cols = {_flatten_column(c): c for c in table.columns}
+            chosen = None
+            for wanted in cfg["columns"]:
+                for flat, original in cols.items():
+                    if flat.lower() == wanted.lower() or wanted.lower() in flat.lower():
+                        chosen = original
+                        break
+                if chosen is not None:
+                    break
+            if chosen is None:
+                continue
+
+            tickers = []
+            for raw in table[chosen].tolist():
+                t = _normalize_exchange_ticker(raw, cfg["suffix"])
+                if t and t not in tickers:
+                    tickers.append(t)
+
+            # Evita di prendere tabelle piccole/non pertinenti.
+            if len(tickers) >= 15:
+                print(f"{market}: caricati {len(tickers)} componenti")
+                return tickers
+
+        print(f"{market}: nessuna tabella componenti riconosciuta")
+    except Exception as exc:
+        print(f"{market}: errore caricamento componenti: {exc}")
+    return []
+
+def build_markets() -> Dict[str, List[str]]:
+    markets = dict(BASE_MARKETS)
+    for market, cfg in INDEX_SOURCES.items():
+        tickers = load_index_from_public_table(market, cfg)
+        if tickers:
+            markets[market] = tickers
+    return markets
+
+MARKETS: Dict[str, List[str]] = {}
 
 
 # ============================================================
@@ -81,6 +201,7 @@ class Catalyst:
 class AnalysisResult:
     symbol: str
     name: str
+    isin: Optional[str]
     market: str
     score: int
     stars: int
@@ -147,14 +268,82 @@ def first_date(value) -> Optional[dt.date]:
         return None
 
 
-def unique_universe() -> List[Tuple[str, str]]:
-    seen = set()
-    out = []
-    for market, tickers in MARKETS.items():
+def unique_universe(markets: Dict[str, List[str]]) -> List[Tuple[str, str]]:
+    """Deduplica ticker identici prima delle chiamate API.
+    Se un ticker appartiene a più indici, conserva tutti i nomi dei mercati.
+    """
+    ticker_markets: Dict[str, List[str]] = {}
+    for market, tickers in markets.items():
         for ticker in tickers:
-            if ticker not in seen:
-                seen.add(ticker)
-                out.append((ticker, market))
+            key = ticker.upper().strip()
+            ticker_markets.setdefault(key, [])
+            if market not in ticker_markets[key]:
+                ticker_markets[key].append(market)
+    return [(ticker, " / ".join(ms)) for ticker, ms in ticker_markets.items()]
+
+def is_us_symbol(symbol: str) -> bool:
+    # Nel nostro universo i ticker USA sono gli unici senza suffisso exchange.
+    return "." not in symbol
+
+def get_isin_safe(stock: yf.Ticker) -> Optional[str]:
+    """Recupera ISIN se yfinance lo rende disponibile; mai inventarlo."""
+    candidates = []
+    try:
+        getter = getattr(stock, "get_isin", None)
+        if callable(getter):
+            candidates.append(getter())
+    except Exception:
+        pass
+    try:
+        value = getattr(stock, "isin", None)
+        if value:
+            candidates.append(value)
+    except Exception:
+        pass
+
+    for value in candidates:
+        if value is None:
+            continue
+        text = str(value).strip().upper()
+        if re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", text):
+            return text
+    return None
+
+def normalize_company_name(name: str) -> str:
+    text = re.sub(r"[^A-Z0-9]", "", str(name).upper())
+    for suffix in ("PLC", "INC", "CORP", "CORPORATION", "LTD", "LIMITED", "SA", "AG", "NV", "SPA", "CO"):
+        if text.endswith(suffix):
+            text = text[:-len(suffix)]
+    return text
+
+def dedupe_company_results(results: List[AnalysisResult]) -> List[AnalysisResult]:
+    """Elimina doppie quotazioni della stessa società dal report.
+    Priorità: ISIN; fallback: nome normalizzato. Mantiene il risultato migliore.
+    """
+    ordered = sorted(
+        results,
+        key=lambda r: (
+            r.score,
+            1 if r.catalyst.confidence == "VERIFIED" else 0,
+            -r.catalyst.days_left,
+        ),
+        reverse=True,
+    )
+    seen_isin = set()
+    seen_names = set()
+    out = []
+    for r in ordered:
+        isin_key = r.isin if r.isin else None
+        name_key = normalize_company_name(r.name)
+        if isin_key and isin_key in seen_isin:
+            continue
+        if name_key and name_key in seen_names:
+            continue
+        if isin_key:
+            seen_isin.add(isin_key)
+        if name_key:
+            seen_names.add(name_key)
+        out.append(r)
     return out
 
 
@@ -197,7 +386,7 @@ def finnhub_get(endpoint: str, params: Optional[dict] = None):
 
 
 def finnhub_earnings_date_us(symbol: str, today: dt.date, end: dt.date) -> Optional[dt.date]:
-    if symbol.endswith(".MI") or not FINNHUB_API_KEY:
+    if not is_us_symbol(symbol) or not FINNHUB_API_KEY:
         return None
 
     data = finnhub_get(
@@ -220,7 +409,7 @@ def finnhub_earnings_date_us(symbol: str, today: dt.date, end: dt.date) -> Optio
 
 def finnhub_recommendation_score_us(symbol: str) -> Tuple[int, List[str]]:
     """0..8 punti extra analyst, solo US."""
-    if symbol.endswith(".MI") or not FINNHUB_API_KEY:
+    if not is_us_symbol(symbol) or not FINNHUB_API_KEY:
         return 0, []
 
     data = finnhub_get("stock/recommendation", {"symbol": symbol})
@@ -327,8 +516,8 @@ def find_best_catalyst(symbol: str, stock: yf.Ticker) -> Optional[Catalyst]:
     yahoo_date = yahoo_dates[0] if yahoo_dates else None
     finnhub_date = finnhub_earnings_date_us(symbol, today, end)
 
-    # Per Milano NON usiamo mai il ticker ripulito su Finnhub.
-    if symbol.endswith(".MI"):
+    # Per tutti i mercati non-USA non convertiamo mai il ticker in un simbolo USA.
+    if not is_us_symbol(symbol):
         if yahoo_date:
             return Catalyst(
                 kind="Trimestrale",
@@ -336,7 +525,7 @@ def find_best_catalyst(symbol: str, stock: yf.Ticker) -> Optional[Catalyst]:
                 days_left=(yahoo_date - today).days,
                 confidence="SINGLE_SOURCE",
                 sources=["Yahoo Finance"],
-                details="Ticker Milano verificato senza conversione verso simboli USA",
+                details="Ticker locale mantenuto con suffisso exchange",
             )
     else:
         if yahoo_date and finnhub_date:
@@ -822,6 +1011,8 @@ def analyze_stock(symbol: str, market: str) -> Optional[AnalysisResult]:
     except Exception:
         name = symbol
 
+    isin = get_isin_safe(stock)
+
     technical_score, r1, k1 = technical_component(df)
     momentum_score, r2, k2 = momentum_component(df)
     analyst_score, target, upside, r3, k3 = analyst_component(stock, symbol, current_price)
@@ -862,6 +1053,7 @@ def analyze_stock(symbol: str, market: str) -> Optional[AnalysisResult]:
     return AnalysisResult(
         symbol=symbol,
         name=str(name),
+        isin=isin,
         market=market,
         score=score,
         stars=stars,
@@ -950,7 +1142,7 @@ def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: i
         "🚀 *TOP OPPORTUNITÀ BORSA*\n"
         f"📅 {today.strftime('%d/%m/%Y')}\n"
         f"🎯 Solo rating ≥ *{MIN_SCORE}/100*\n"
-        f"🔎 Universo: FTSE MIB + Dow Jones + Nasdaq-100\n\n"
+        f"🔎 Universo: 10 indici internazionali\n\n"
     )
 
     for i, r in enumerate(results[:TOP_N], start=1):
@@ -963,6 +1155,7 @@ def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: i
 
         report += (
             f"*#{i} {r.name}* (`{r.symbol}`)\n"
+            f"🆔 ISIN: `{r.isin or 'N/D'}`\n"
             f"{r.market}\n"
             f"{stars} *{r.score}/100*\n\n"
             f"📅 *Catalyst:* {r.catalyst.kind} {r.catalyst.date.strftime('%d/%m/%Y')} "
@@ -1011,12 +1204,18 @@ def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: i
 # ============================================================
 def main():
     print("=" * 70)
-    print("MARKET OPPORTUNITY SCANNER 2.0")
-    print("FTSE MIB + DOW JONES + NASDAQ-100")
+    print("MARKET OPPORTUNITY SCANNER 3.0")
+    print("10 INDICI GLOBALI - DEDUPLICAZIONE TICKER + ISIN")
     print("Solo opportunità 4/5 e 5/5")
     print("=" * 70)
 
-    universe = unique_universe()
+    global MARKETS
+    MARKETS = build_markets()
+    print("Mercati caricati:")
+    for market, tickers in MARKETS.items():
+        print(f"  {market}: {len(tickers)}")
+
+    universe = unique_universe(MARKETS)
     results: List[AnalysisResult] = []
     catalysts_found = 0
 
@@ -1034,6 +1233,11 @@ def main():
 
         if REQUEST_SLEEP > 0:
             time.sleep(REQUEST_SLEEP)
+
+    # Deduplica anche la stessa società presente con ticker/quotazioni diverse.
+    before_dedupe = len(results)
+    results = dedupe_company_results(results)
+    print(f"Deduplica società: {before_dedupe} -> {len(results)}")
 
     # Migliori prima. A parità di score preferiamo catalyst verificato e più vicino.
     results.sort(
