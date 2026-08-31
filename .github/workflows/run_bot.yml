@@ -1,13 +1,18 @@
-name: Scansione Segnali Borsa
+name: Scansione Segnali Borsa Global Catalyst
 
 on:
   schedule:
     - cron: "30 19 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: global-catalyst-scanner
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     steps:
       - name: Scarica il codice
@@ -21,26 +26,27 @@ jobs:
       - name: Installa pacchetti
         run: |
           python -m pip install --upgrade pip
-          python -m pip install requests pandas yfinance lxml
+          python -m pip install requests pandas numpy yfinance lxml html5lib beautifulsoup4
 
-      - name: Controlla versione codice
+      - name: Controlla configurazione
         run: |
           echo "======================================"
-          echo "CODICE SCANNER"
+          echo "GLOBAL CATALYST SCANNER"
           echo "======================================"
-          echo "Python:"
           python --version
-          echo ""
-          echo "File main.py:"
           ls -lh main.py
-          echo ""
-          echo "Prime righe main.py:"
-          head -20 main.py
+          python -m py_compile main.py
 
       - name: Esegui scanner
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LOOKAHEAD_DAYS: "30"
+          NEWS_LOOKBACK_DAYS: "14"
+          MIN_SCORE: "75"
+          TOP_N: "5"
+          REQUEST_SLEEP: "0.12"
+          PYTHONUNBUFFERED: "1"
         run: |
           python main.py
