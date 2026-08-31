@@ -23,6 +23,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 LOOKAHEAD_DAYS = int(os.getenv("LOOKAHEAD_DAYS", "30"))
 MIN_SCORE = int(os.getenv("MIN_SCORE", "75"))        # 75 = 4 stelle
 TOP_N = int(os.getenv("TOP_N", "5"))
+NEWS_LOOKBACK_DAYS = int(os.getenv("NEWS_LOOKBACK_DAYS", "14"))
 REQUEST_SLEEP = float(os.getenv("REQUEST_SLEEP", "0.15"))
 
 # Limiti di sicurezza dello scoring
@@ -104,6 +105,47 @@ INDEX_SOURCES = {
         "columns": ["Code", "Ticker", "Ticker symbol", "Symbol"],
         "suffix": ".T",
     },
+    # Mercati secondari: mid-cap USA + Europa/Asia selezionata.
+    "🇺🇸 S&P MidCap 400": {
+        "url": "https://en.wikipedia.org/wiki/S%26P_400",
+        "columns": ["Symbol", "Ticker", "Ticker symbol"],
+        "suffix": "",
+    },
+    "🇪🇸 IBEX 35": {
+        "url": "https://en.wikipedia.org/wiki/IBEX_35",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".MC",
+    },
+    "🇸🇪 OMX Stockholm 30": {
+        "url": "https://en.wikipedia.org/wiki/OMX_Stockholm_30",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".ST",
+    },
+    "🇭🇰 Hang Seng": {
+        "url": "https://en.wikipedia.org/wiki/Hang_Seng_Index",
+        "columns": ["Ticker", "Code", "Ticker symbol", "Symbol"],
+        "suffix": ".HK",
+    },
+    "🇸🇬 Straits Times": {
+        "url": "https://en.wikipedia.org/wiki/Straits_Times_Index",
+        "columns": ["Ticker", "Stock symbol", "Symbol"],
+        "suffix": ".SI",
+    },
+    "🇧🇪 BEL 20": {
+        "url": "https://en.wikipedia.org/wiki/BEL_20",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".BR",
+    },
+    "🇦🇹 ATX": {
+        "url": "https://en.wikipedia.org/wiki/Austrian_Traded_Index",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".VI",
+    },
+    "🇵🇹 PSI": {
+        "url": "https://en.wikipedia.org/wiki/PSI_(Portugal)",
+        "columns": ["Ticker", "Ticker symbol", "Symbol"],
+        "suffix": ".LS",
+    },
 }
 
 def _flatten_column(col) -> str:
@@ -117,20 +159,30 @@ def _normalize_exchange_ticker(raw: str, suffix: str) -> Optional[str]:
     if not value or value in {"NAN", "NONE", "N/A", "-"}:
         return None
 
-    # Nikkei: codici numerici a 4 cifre.
+    # Giappone: codice numerico a 4 cifre.
     if suffix == ".T":
         m = re.search(r"\b(\d{4})\b", value)
         return f"{m.group(1)}.T" if m else None
 
-    # Rimuove eventuali suffissi di mercato già presenti nella tabella.
-    for known in (".DE", ".PA", ".L", ".AS", ".SW", ".TO"):
+    # Hong Kong: Yahoo usa normalmente codice numerico a 4 cifre + .HK.
+    if suffix == ".HK":
+        m = re.search(r"\b(\d{1,5})\b", value.replace(",", ""))
+        if m:
+            return f"{int(m.group(1)):04d}.HK"
+        return None
+
+    known_suffixes = (
+        ".DE", ".PA", ".L", ".AS", ".SW", ".TO", ".MC", ".ST",
+        ".SI", ".BR", ".VI", ".LS"
+    )
+    for known in known_suffixes:
         if value.endswith(known):
             value = value[:-len(known)]
             break
 
     value = value.split()[0].strip()
-    # Yahoo usa spesso '-' per classi azionarie.
-    if suffix in {".L", ".TO"}:
+    # Yahoo usa '-' per molte classi azionarie (es. BRK-B).
+    if suffix in {"", ".L", ".TO"}:
         value = value.replace(".", "-")
     value = re.sub(r"[^A-Z0-9\-]", "", value)
     if not value:
@@ -212,6 +264,11 @@ class AnalysisResult:
     catalyst_score: int
     momentum_score: int
     sentiment_score: int
+    event_score: int
+    fundamental_score: int
+    special_catalyst: bool
+    event_summary: Optional[str]
+    event_source: Optional[str]
     current_price: Optional[float]
     target_price: Optional[float]
     upside_pct: Optional[float]
@@ -943,35 +1000,263 @@ def sentiment_component(stock: yf.Ticker) -> Tuple[int, List[str], List[str]]:
     return int(clamp(score, 0, 10)), reasons, risks
 
 
+
 # ============================================================
-# CATALYST SCORE 0..20
+# CATALYST INTELLIGENCE: EVENTI SOCIETARI / GOVERNATIVI 0..30
+# Usa solo titoli/metadata delle news: niente affermazioni inventate.
+# Un progetto/gara viene marcato come POTENZIALE finché non è assegnato.
+# ============================================================
+CONFIRMED_CONTRACT_PATTERNS = [
+    r"\bawarded\b.*\bcontract\b", r"\bwins?\b.*\bcontract\b",
+    r"\bcontract\b.*\bawarded\b", r"\bselected\b.*\bcontract\b",
+    r"\breceives?\b.*\border\b", r"\bsecures?\b.*\border\b",
+    r"\bframework agreement\b", r"\bauftrag erhalten\b",
+    r"\bcontrat.*attribu", r"\baggiudica.*contratt", r"\bcommessa.*assegnat",
+]
+GOV_WORDS = [
+    "government", "ministry", "department of defense", "department of defence",
+    "pentagon", "nato", "state", "public procurement", "public sector",
+    "eu commission", "european commission", "federal", "defence", "defense",
+    "governo", "ministero", "stato", "pubblica amministrazione", "ue",
+]
+PROJECT_WORDS = [
+    "tender", "bid", "proposal", "submitted", "project", "programme", "program",
+    "procurement", "funding", "grant", "rfp", "gara", "bando", "progetto",
+    "offerta", "finanziamento", "stanziamento",
+]
+GUIDANCE_POS = [
+    "raises guidance", "raises outlook", "lifts guidance", "lifts outlook",
+    "upgrades guidance", "guidance raised", "boosts forecast", "alza la guidance",
+]
+GUIDANCE_NEG = [
+    "cuts guidance", "lowers guidance", "cuts outlook", "profit warning",
+    "guidance cut", "taglia la guidance", "riduce la guidance",
+]
+REGULATORY_POS = [
+    "fda approval", "fda approves", "ema approval", "approved by fda",
+    "regulatory approval", "authorization granted", "authorisation granted",
+    "approvazione fda", "approvazione ema", "autorizzazione concessa",
+]
+MNA_POS = [
+    "acquisition", "to acquire", "merger agreement", "takeover offer",
+    "strategic review", "acquisizione", "fusione", "opa",
+]
+CAPITAL_RETURN_POS = [
+    "share buyback", "stock buyback", "repurchase program", "repurchase programme",
+    "buyback program", "riacquisto azioni", "buyback",
+]
+PARTNERSHIP_POS = [
+    "strategic partnership", "partnership with", "joint venture", "collaboration with",
+    "partnership strategica", "joint venture con", "accordo strategico",
+]
+ORDER_BACKLOG_POS = [
+    "record backlog", "order backlog", "order intake", "record orders",
+    "backlog record", "portafoglio ordini", "nuovi ordini", "record di ordini",
+]
+NEGATIVE_EVENT_WORDS = [
+    "contract cancelled", "contract canceled", "loses contract", "investigation",
+    "accounting probe", "fraud probe", "bankruptcy", "chapter 11", "share offering",
+    "secondary offering", "dilution", "recall", "suspends guidance",
+]
+
+
+def _news_fields(item: dict) -> Tuple[str, str, Optional[dt.datetime], str]:
+    """Compatibile con vecchio e nuovo formato yfinance news."""
+    if not isinstance(item, dict):
+        return "", "", None, ""
+    content = item.get("content") if isinstance(item.get("content"), dict) else item
+    title = str(content.get("title") or item.get("title") or "").strip()
+    summary = str(content.get("summary") or content.get("description") or item.get("summary") or "").strip()
+    provider = content.get("provider")
+    if isinstance(provider, dict):
+        source = str(provider.get("displayName") or provider.get("name") or "Yahoo Finance")
+    else:
+        source = str(item.get("publisher") or content.get("publisher") or "Yahoo Finance")
+
+    published = None
+    raw = content.get("pubDate") or content.get("displayTime") or item.get("providerPublishTime")
+    try:
+        if isinstance(raw, (int, float)):
+            published = dt.datetime.fromtimestamp(raw, tz=dt.timezone.utc)
+        elif raw:
+            ts = pd.to_datetime(raw, utc=True)
+            published = ts.to_pydatetime()
+    except Exception:
+        published = None
+    return title, summary, published, source
+
+
+def _contains_any(text: str, words: List[str]) -> bool:
+    low = text.lower()
+    return any(w.lower() in low for w in words)
+
+
+def _matches_any(text: str, patterns: List[str]) -> bool:
+    return any(re.search(p, text, flags=re.IGNORECASE) for p in patterns)
+
+
+def event_intelligence_component(stock: yf.Ticker) -> Tuple[int, List[str], List[str], bool, Optional[str], Optional[str]]:
+    """0..30. Analizza eventi concreti nelle news recenti.
+
+    Restituisce anche un flag SPECIAL e il miglior evento da mostrare nel report.
+    La classificazione è euristica: il testo Telegram lo presenta come segnale,
+    non come certezza su ordini/profitti futuri.
+    """
+    score = 0
+    reasons: List[str] = []
+    risks: List[str] = []
+    special = False
+    best_summary = None
+    best_source = None
+    best_event_points = -999
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=NEWS_LOOKBACK_DAYS)
+
+    try:
+        news = stock.news or []
+    except Exception:
+        news = []
+
+    seen_titles = set()
+    for item in news[:40]:
+        title, summary, published, source = _news_fields(item)
+        if not title:
+            continue
+        key = re.sub(r"\W+", "", title.lower())
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        if published and published < cutoff:
+            continue
+
+        text = f"{title}. {summary}".strip()
+        low = text.lower()
+        event_points = 0
+        label = None
+
+        if _contains_any(low, NEGATIVE_EVENT_WORDS) or _contains_any(low, GUIDANCE_NEG):
+            risks.append(f"🔴 Evento/news da verificare: {title[:180]}")
+            event_points -= 8
+
+        # Contratto/ordine già annunciato: fatto più forte di una semplice candidatura.
+        if _matches_any(text, CONFIRMED_CONTRACT_PATTERNS):
+            gov = _contains_any(low, GOV_WORDS)
+            event_points += 15 if gov else 12
+            label = "🏛️ Contratto/ordine annunciato" if gov else "📦 Contratto/ordine annunciato"
+            special = True
+
+        # Progetto/gara/government funding: solo POTENZIALE, mai presentato come assegnazione.
+        elif _contains_any(low, GOV_WORDS) and _contains_any(low, PROJECT_WORDS):
+            event_points += 10
+            label = "🟠 Catalyst governativo POTENZIALE"
+            special = True
+
+        if _contains_any(low, GUIDANCE_POS):
+            event_points += 9
+            label = label or "📈 Guidance/outlook migliorati"
+            special = True
+        if _contains_any(low, REGULATORY_POS):
+            event_points += 10
+            label = label or "🧪 Approvazione regolatoria"
+            special = True
+        if _contains_any(low, ORDER_BACKLOG_POS):
+            event_points += 7
+            label = label or "🏭 Ordini/backlog in miglioramento"
+        if _contains_any(low, CAPITAL_RETURN_POS):
+            event_points += 5
+            label = label or "💰 Buyback/ritorno di capitale"
+        if _contains_any(low, PARTNERSHIP_POS):
+            event_points += 5
+            label = label or "🤝 Partnership strategica"
+        if _contains_any(low, MNA_POS):
+            event_points += 6
+            label = label or "🔄 M&A / operazione straordinaria"
+
+        # Evita che una sola news con molte keyword saturi lo score.
+        event_points = int(clamp(event_points, -10, 15))
+        if event_points > 0 and label:
+            reasons.append(f"{label}: {title[:170]}")
+        if event_points > best_event_points and event_points > 0:
+            best_event_points = event_points
+            best_summary = f"{label}: {title[:220]}" if label else title[:220]
+            best_source = source
+
+        score += max(0, event_points)
+
+    return int(clamp(score, 0, 30)), reasons[:6], risks[:4], special, best_summary, best_source
+
+
+# ============================================================
+# FONDAMENTALI 0..10
+# Non sostituisce un'analisi di bilancio: usa metriche Yahoo disponibili.
+# ============================================================
+def fundamental_component(stock: yf.Ticker) -> Tuple[int, List[str], List[str]]:
+    score = 0
+    reasons: List[str] = []
+    risks: List[str] = []
+    try:
+        info = stock.info or {}
+    except Exception:
+        info = {}
+
+    rev_growth = safe_float(info.get("revenueGrowth"))
+    earn_growth = safe_float(info.get("earningsGrowth"))
+    op_margin = safe_float(info.get("operatingMargins"))
+    fcf = safe_float(info.get("freeCashflow"))
+    debt_eq = safe_float(info.get("debtToEquity"))
+
+    if rev_growth is not None:
+        if rev_growth >= 0.12:
+            score += 3; reasons.append(f"🟢 Ricavi in crescita +{rev_growth*100:.1f}%")
+        elif rev_growth >= 0.04:
+            score += 2
+        elif rev_growth < -0.08:
+            risks.append(f"🔴 Ricavi in calo {rev_growth*100:.1f}%")
+    if earn_growth is not None:
+        if earn_growth >= 0.15:
+            score += 3; reasons.append(f"🟢 Utili in crescita +{earn_growth*100:.1f}%")
+        elif earn_growth >= 0.05:
+            score += 2
+        elif earn_growth < -0.10:
+            risks.append(f"🔴 Utili in calo {earn_growth*100:.1f}%")
+    if op_margin is not None and op_margin > 0.15:
+        score += 2; reasons.append(f"🟢 Margine operativo {op_margin*100:.1f}%")
+    if fcf is not None and fcf > 0:
+        score += 2; reasons.append("🟢 Free cash flow positivo")
+    if debt_eq is not None and debt_eq > 250:
+        risks.append(f"⚠️ Debito/equity elevato ({debt_eq:.0f}%)")
+
+    return int(clamp(score, 0, 10)), reasons, risks
+
+
+# ============================================================
+# CATALYST CALENDARIO 0..10
 # ============================================================
 def catalyst_component(catalyst: Catalyst) -> Tuple[int, List[str], List[str]]:
     reasons, risks = [], []
     score = 0
 
     if catalyst.kind == "Trimestrale":
-        score += 10
+        score += 5
     elif catalyst.kind == "Ex-dividend":
-        score += 4
+        score += 2
 
     if catalyst.confidence == "VERIFIED":
-        score += 6
+        score += 3
         reasons.append("✅ Data catalyst verificata da 2 fonti")
     elif catalyst.confidence == "SINGLE_SOURCE":
-        score += 3
+        score += 2
         reasons.append(f"🟡 Data catalyst da una fonte: {', '.join(catalyst.sources)}")
     else:
         risks.append("🔴 Data catalyst in conflitto")
 
     if 1 <= catalyst.days_left <= 14:
-        score += 4
+        score += 2
         reasons.append(f"📅 Catalyst vicino: tra {catalyst.days_left} giorni")
     elif 15 <= catalyst.days_left <= LOOKAHEAD_DAYS:
-        score += 2
+        score += 1
         reasons.append(f"📅 Catalyst tra {catalyst.days_left} giorni")
 
-    return int(clamp(score, 0, 20)), reasons, risks
+    return int(clamp(score, 0, 10)), reasons, risks
 
 
 # ============================================================
@@ -981,19 +1266,32 @@ def analyze_stock(symbol: str, market: str) -> Optional[AnalysisResult]:
     print(f"\n--- {symbol} | {market} ---")
     stock = yf.Ticker(symbol)
 
-    # 1) Prima il catalyst: se non esiste entro 30 gg non sprechiamo altre chiamate.
+    # FASE 1 - catalyst calendario + intelligence news. Se non c'è nulla di concreto,
+    # evitiamo le chiamate più costose dell'analisi completa.
     catalyst = find_best_catalyst(symbol, stock)
-    if catalyst is None:
-        print("Nessun catalyst affidabile entro finestra.")
+    event_score, er, ek, special, event_summary, event_source = event_intelligence_component(stock)
+
+    if catalyst is None and event_score < 5:
+        print("Nessun catalyst calendario o evento strategico sufficiente.")
         return None
 
-    # 2) Storico per tecnica
+    # Se l'evento news è il solo catalyst, creiamo un catalyst strategico di oggi.
+    if catalyst is None:
+        today = dt.date.today()
+        catalyst = Catalyst(
+            kind="Catalyst strategico",
+            date=today,
+            days_left=0,
+            confidence="SINGLE_SOURCE",
+            sources=[event_source or "News Yahoo Finance"],
+            details=event_summary or "Evento societario recente",
+        )
+
     try:
         df = stock.history(period="1y", interval="1d", auto_adjust=False)
     except Exception as exc:
         print(f"history error: {exc}")
         return None
-
     if df is None or df.empty or len(df) < MIN_HISTORY_ROWS:
         print("Storico insufficiente")
         return None
@@ -1004,71 +1302,66 @@ def analyze_stock(symbol: str, market: str) -> Optional[AnalysisResult]:
     if not current_price or current_price <= 0:
         return None
 
-    # Nome
     try:
         info = stock.info or {}
         name = info.get("shortName") or info.get("longName") or symbol
     except Exception:
         name = symbol
-
     isin = get_isin_safe(stock)
 
-    technical_score, r1, k1 = technical_component(df)
-    momentum_score, r2, k2 = momentum_component(df)
-    analyst_score, target, upside, r3, k3 = analyst_component(stock, symbol, current_price)
-    estimates_score, r4, k4 = estimates_component(stock)
-    catalyst_score, r5, k5 = catalyst_component(catalyst)
-    sentiment_score, r6, k6 = sentiment_component(stock)
+    # Componenti originarie riscalate ai nuovi pesi.
+    tech25, r1, k1 = technical_component(df)
+    mom10, r2, k2 = momentum_component(df)
+    analyst20, target, upside, r3, k3 = analyst_component(stock, symbol, current_price)
+    est15, r4, k4 = estimates_component(stock)
+    cal10, r5, k5 = catalyst_component(catalyst)
+    sent10, r6, k6 = sentiment_component(stock)
+    fund10, r7, k7 = fundamental_component(stock)
+
+    technical_score = round(tech25 * 15 / 25)
+    momentum_score = round(mom10 * 5 / 10)
+    analyst_score = round(analyst20 * 10 / 20)
+    estimates_score = round(est15 * 10 / 15)
+    catalyst_score = cal10
+    sentiment_score = sent10
+    fundamental_score = fund10
 
     raw_score = (
-        technical_score
-        + analyst_score
-        + estimates_score
-        + catalyst_score
-        + momentum_score
-        + sentiment_score
+        technical_score + analyst_score + estimates_score + catalyst_score +
+        event_score + fundamental_score + momentum_score + sentiment_score
     )
 
-    # Penalizzazioni di affidabilità / rischio.
     penalty = 0
-    if catalyst.confidence == "SINGLE_SOURCE":
-        penalty += 3
+    if catalyst.confidence == "SINGLE_SOURCE" and catalyst.kind == "Trimestrale":
+        penalty += 2
     if upside is not None and upside < -5:
-        penalty += 7
+        penalty += 5
     if len(k1) >= 2:
+        penalty += 2
+    # Un semplice progetto/gara non può da solo trasformare un titolo mediocre in 5 stelle.
+    if special and event_summary and "POTENZIALE" in event_summary.upper() and technical_score < 7:
         penalty += 3
 
     score = int(clamp(raw_score - penalty, 0, 100))
     stars = score_to_stars(score)
-
-    reasons = r1 + r2 + r3 + r4 + r5 + r6
-    risks = k1 + k2 + k3 + k4 + k5 + k6
+    reasons = er + r1 + r2 + r3 + r4 + r5 + r6 + r7
+    risks = ek + k1 + k2 + k3 + k4 + k5 + k6 + k7
 
     print(
-        f"score={score} tech={technical_score} analyst={analyst_score} "
-        f"est={estimates_score} catalyst={catalyst_score} "
-        f"mom={momentum_score} sentiment={sentiment_score}"
+        f"score={score} tech={technical_score}/15 analyst={analyst_score}/10 "
+        f"est={estimates_score}/10 cal={catalyst_score}/10 events={event_score}/30 "
+        f"fund={fundamental_score}/10 mom={momentum_score}/5 news={sentiment_score}/10"
     )
 
     return AnalysisResult(
-        symbol=symbol,
-        name=str(name),
-        isin=isin,
-        market=market,
-        score=score,
-        stars=stars,
-        catalyst=catalyst,
-        technical_score=technical_score,
-        analyst_score=analyst_score,
-        estimates_score=estimates_score,
-        catalyst_score=catalyst_score,
-        momentum_score=momentum_score,
-        sentiment_score=sentiment_score,
-        current_price=current_price,
-        target_price=target,
-        upside_pct=upside,
-        reasons=reasons,
-        risks=risks,
+        symbol=symbol, name=str(name), isin=isin, market=market, score=score, stars=stars,
+        catalyst=catalyst, technical_score=technical_score, analyst_score=analyst_score,
+        estimates_score=estimates_score, catalyst_score=catalyst_score,
+        momentum_score=momentum_score, sentiment_score=sentiment_score,
+        event_score=event_score, fundamental_score=fundamental_score,
+        special_catalyst=special, event_summary=event_summary, event_source=event_source,
+        current_price=current_price, target_price=target, upside_pct=upside,
+        reasons=reasons, risks=risks,
     )
 
 
@@ -1126,50 +1419,58 @@ def fmt_price(x: Optional[float]) -> str:
 
 def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: int) -> str:
     today = dt.date.today()
-
     if not results:
         return (
             "✅ *SCANSIONE BORSA COMPLETATA*\n\n"
             f"📅 {today.strftime('%d/%m/%Y')}\n"
             f"🔎 Titoli unici analizzati: *{scanned}*\n"
-            f"📅 Titoli con catalyst entro {LOOKAHEAD_DAYS} gg: *{catalysts_found}*\n\n"
-            f"📊 *Nessuna opportunità da 4/5 o 5/5 oggi.*\n\n"
-            f"Soglia minima: *{MIN_SCORE}/100*.\n"
-            "Il bot non invia titoli mediocri solo per riempire il report."
+            f"🔥 Titoli con catalyst/evento rilevante: *{catalysts_found}*\n\n"
+            "📊 *Nessuna opportunità da 4/5 o 5/5 oggi.*\n\n"
+            f"Soglia minima: *{MIN_SCORE}/100*. Nessun titolo viene inserito per riempire il report."
         )
 
+    special_count = sum(1 for r in results if r.special_catalyst)
     report = (
-        "🚀 *TOP OPPORTUNITÀ BORSA*\n"
+        "🚀 *TOP OPPORTUNITÀ BORSA — GLOBAL CATALYST*\n"
         f"📅 {today.strftime('%d/%m/%Y')}\n"
         f"🎯 Solo rating ≥ *{MIN_SCORE}/100*\n"
-        f"🔎 Universo: 10 indici internazionali\n\n"
+        f"🔥 Catalyst Special tra i finalisti: *{special_count}*\n\n"
     )
 
     for i, r in enumerate(results[:TOP_N], start=1):
         stars = "⭐" * r.stars
-        confidence = {
-            "VERIFIED": "✅ verificata",
-            "SINGLE_SOURCE": "🟡 singola fonte",
-            "CONFLICT": "🔴 conflitto",
-        }.get(r.catalyst.confidence, r.catalyst.confidence)
+        confidence = {"VERIFIED":"✅ verificata", "SINGLE_SOURCE":"🟡 singola fonte", "CONFLICT":"🔴 conflitto"}.get(r.catalyst.confidence, r.catalyst.confidence)
+        if r.special_catalyst:
+            report += "🚨 *CATALYST SPECIAL*\n"
 
         report += (
             f"*#{i} {r.name}* (`{r.symbol}`)\n"
             f"🆔 ISIN: `{r.isin or 'N/D'}`\n"
-            f"{r.market}\n"
-            f"{stars} *{r.score}/100*\n\n"
-            f"📅 *Catalyst:* {r.catalyst.kind} {r.catalyst.date.strftime('%d/%m/%Y')} "
-            f"(tra {r.catalyst.days_left} gg)\n"
-            f"🔐 Data: {confidence} — {', '.join(r.catalyst.sources)}\n\n"
-            f"📈 Tecnica: *{r.technical_score}/25*\n"
-            f"🧠 Analisti/target: *{r.analyst_score}/20*\n"
-            f"📊 Stime/revisioni: *{r.estimates_score}/15*\n"
-            f"📅 Catalyst: *{r.catalyst_score}/20*\n"
-            f"🔥 Momentum/volume: *{r.momentum_score}/10*\n"
+            f"{r.market}\n{stars} *{r.score}/100*\n\n"
+        )
+
+        if r.event_summary:
+            report += (
+                f"🔥 *Evento rilevato:* {r.event_summary}\n"
+                f"📰 Fonte news: {r.event_source or 'N/D'}\n"
+            )
+            if "POTENZIALE" in r.event_summary.upper():
+                report += "⚠️ *Stato:* opportunità potenziale; contratto/ordine NON considerato assegnato.\n"
+            report += "\n"
+
+        report += (
+            f"📅 *Catalyst calendario:* {r.catalyst.kind} — {r.catalyst.date.strftime('%d/%m/%Y')}\n"
+            f"🔐 Affidabilità: {confidence} — {', '.join(r.catalyst.sources)}\n\n"
+            f"📈 Tecnica: *{r.technical_score}/15*\n"
+            f"🧠 Analisti/target: *{r.analyst_score}/10*\n"
+            f"📊 Stime/revisioni: *{r.estimates_score}/10*\n"
+            f"📅 Catalyst calendario: *{r.catalyst_score}/10*\n"
+            f"🏛️ Eventi/contratti/progetti: *{r.event_score}/30*\n"
+            f"💼 Fondamentali: *{r.fundamental_score}/10*\n"
+            f"🔥 Momentum/volume: *{r.momentum_score}/5*\n"
             f"📰 Upgrade/news: *{r.sentiment_score}/10*\n\n"
             f"💵 Prezzo: *{fmt_price(r.current_price)}*\n"
         )
-
         if r.target_price is not None:
             report += f"🎯 Target medio: *{fmt_price(r.target_price)}*"
             if r.upside_pct is not None:
@@ -1177,24 +1478,22 @@ def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: i
                 report += f" ({sign}{r.upside_pct:.1f}%)"
             report += "\n"
 
-        best_reasons = r.reasons[:6]
-        if best_reasons:
+        if r.reasons:
             report += "\n*Perché è in classifica:*\n"
-            for reason in best_reasons:
+            for reason in r.reasons[:7]:
                 report += f"• {reason}\n"
-
         if r.risks:
-            report += "\n*Rischi principali:*\n"
+            report += "\n*Rischi / elementi da verificare:*\n"
             for risk in r.risks[:3]:
                 report += f"• {risk}\n"
-
         report += "\n——————————————\n\n"
 
     report += (
-        f"Titoli con catalyst trovati: *{catalysts_found}*\n"
+        f"Titoli con catalyst/eventi trovati: *{catalysts_found}*\n"
         f"Titoli mostrati: *{min(len(results), TOP_N)}*\n\n"
-        "⚠️ Segnali quantitativi automatici a supporto dell'analisi; "
-        "non costituiscono consulenza finanziaria."
+        "⚠️ Lo scanner classifica automaticamente dati e titoli di news. "
+        "Una gara, proposta o progetto viene trattato come potenziale finché una fonte non comunica l'assegnazione. "
+        "Non costituisce consulenza finanziaria."
     )
     return report
 
@@ -1204,8 +1503,8 @@ def build_report(results: List[AnalysisResult], scanned: int, catalysts_found: i
 # ============================================================
 def main():
     print("=" * 70)
-    print("MARKET OPPORTUNITY SCANNER 3.0")
-    print("10 INDICI GLOBALI - DEDUPLICAZIONE TICKER + ISIN")
+    print("MARKET OPPORTUNITY SCANNER 4.0 — GLOBAL CATALYST")
+    print("MERCATI GLOBALI + MID-CAP + CATALYST INTELLIGENCE + ISIN")
     print("Solo opportunità 4/5 e 5/5")
     print("=" * 70)
 
